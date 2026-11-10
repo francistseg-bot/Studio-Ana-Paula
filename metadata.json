@@ -1,0 +1,6 @@
+{
+  "name": "PilatesCore - Gestão de Studio de Pilates",
+  "description": "Plataforma completa de gestão para Studios de Pilates: controle de alunos, anamnese postural, agenda de aparelhos (Reformer, Cadillac), controle financeiro e prescrição de exercícios.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
