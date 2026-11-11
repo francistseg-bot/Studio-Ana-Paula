@@ -161,7 +161,30 @@ export const INITIAL_MODALITIES: Modality[] = [
 // DEMAIS CADASTROS ZERADOS PARA TESTE DO USUÁRIO
 export const INITIAL_INSTRUCTORS: Instructor[] = [];
 
-export const INITIAL_USERS: UserAccount[] = [];
+export const INITIAL_USERS: UserAccount[] = [
+  {
+    id: 'usr-admin-master',
+    name: 'Dra. Ana Paula Rodrigues',
+    email: 'admin@studioanapaula.com.br',
+    password: 'admin',
+    passwordMasked: '••••••••',
+    role: 'Administrador',
+    permissions: [
+      'Gerenciar Alunos',
+      'Registrar Matrículas',
+      'Agendar Horários',
+      'Visualizar Financeiro',
+      'Gerenciar Modalidades',
+      'Configurar Studio',
+      'Gerenciar Professores',
+      'Gerenciar Despesas',
+      'Visualizar DRE',
+      'Fechar Comissões'
+    ],
+    status: 'Ativo',
+    createdAt: '2026-01-01'
+  }
+];
 
 export const INITIAL_STUDENTS: Student[] = [];
 

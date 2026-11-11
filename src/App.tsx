@@ -64,9 +64,13 @@ export default function App() {
     getStudioData('instructors', INITIAL_INSTRUCTORS)
   );
 
-  const [users, setUsers] = useState<UserAccount[]>(() =>
-    getStudioData('users', INITIAL_USERS)
-  );
+  const [users, setUsers] = useState<UserAccount[]>(() => {
+    const saved = getStudioData('users', INITIAL_USERS);
+    if (!saved || saved.length === 0) {
+      return INITIAL_USERS;
+    }
+    return saved;
+  });
 
   const [agendaSessions, setAgendaSessions] = useState<AgendaClassSession[]>(() =>
     getStudioData('agendaSessions', INITIAL_AGENDA_SESSIONS)
@@ -167,11 +171,6 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-  };
-
-  const handleRegisterFirstAdmin = (admin: UserAccount) => {
-    setUsers(prev => [admin, ...prev]);
-    setCurrentUser(admin);
   };
 
   // Handlers para fechamento e reabertura de comissão dos professores
@@ -535,7 +534,6 @@ export default function App() {
       <LoginView
         users={users}
         onLogin={handleLogin}
-        onRegisterFirstAdmin={handleRegisterFirstAdmin}
         companyData={companyData}
       />
     );
