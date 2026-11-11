@@ -110,11 +110,12 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({
       };
       onUpdateUser(updated);
     } else {
+      if (!password.trim()) return;
       const newUser: UserAccount = {
         id: `usr-${Date.now()}`,
         name: name.trim(),
         email: email.trim().toLowerCase(),
-        password: password.trim() ? password.trim() : '123456',
+        password: password.trim(),
         passwordMasked: '••••••••',
         role,
         permissions: selectedPermissions,

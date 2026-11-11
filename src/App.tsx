@@ -150,6 +150,16 @@ export default function App() {
     setStudioData('currentUser', currentUser);
   }, [currentUser]);
 
+  // Auditoria e segurança contínua: se o usuário for excluído ou inativado em 2.2 Usuários, revoga o acesso imediatamente
+  useEffect(() => {
+    if (currentUser && users.length > 0) {
+      const activeAccount = users.find(u => u.id === currentUser.id && u.status === 'Ativo');
+      if (!activeAccount) {
+        setCurrentUser(null);
+      }
+    }
+  }, [users, currentUser]);
+
   // Handlers de Autenticação / Sessão
   const handleLogin = (user: UserAccount) => {
     setCurrentUser(user);
