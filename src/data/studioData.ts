@@ -217,8 +217,8 @@ export const INITIAL_OPERATING_CONFIG: StudioOperatingConfig = {
   instructorCustomHours: {}
 };
 
-// STORAGE KEY COM PREFIXO V2 PARA LIMPAR DADOS PREVIAMENTE SALVOS NO NAVEGADOR
-const STORAGE_KEY = 'studio_anapaula_v2_';
+// STORAGE KEY COM PREFIXO V3 PARA LIMPAR CONTAS E DADOS ANTIGOS NO NAVEGADOR E MOBILE
+const STORAGE_KEY = 'studio_anapaula_v3_';
 
 export function getStudioData<T>(key: string, defaultVal: T): T {
   try {

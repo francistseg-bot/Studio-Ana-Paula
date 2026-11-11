@@ -65,8 +65,13 @@ export default function App() {
   );
 
   const [users, setUsers] = useState<UserAccount[]>(() => {
+    // Garante que a conta do Administrador Master oficial esteja sempre ativa com a senha 'admin'
     const saved = getStudioData('users', INITIAL_USERS);
-    if (!saved || saved.length === 0) {
+    const masterAccount = saved?.find(
+      (u: UserAccount) => u.email.trim().toLowerCase() === 'admin@studioanapaula.com.br' && (u.password === 'admin' || u.password === 'admin123')
+    );
+    if (!masterAccount) {
+      setStudioData('users', INITIAL_USERS);
       return INITIAL_USERS;
     }
     return saved;
