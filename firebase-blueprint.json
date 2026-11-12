@@ -1,0 +1,157 @@
+{
+  "entities": {
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Conta de usuário do sistema Studio com permissões e credenciais.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "passwordMasked": { "type": "string" },
+        "role": { "type": "string" },
+        "permissions": { "type": "array" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role", "status"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Ficha completa de cadastro, anamnese, matrícula e assinatura do aluno.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "birthDate": { "type": "string" },
+        "cpf": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "status"]
+    },
+    "Instructor": {
+      "title": "Instructor",
+      "description": "Professor ou Fisioterapeuta do Studio com comissões e conselho profissional.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "councilNumber": { "type": "string" },
+        "commissionPercentage": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "status"]
+    },
+    "Modality": {
+      "title": "Modality",
+      "description": "Modalidade de atendimento ou pacote de aulas do Studio.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "billingType": { "type": "string" },
+        "price": { "type": "number" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name", "price"]
+    },
+    "AgendaClassSession": {
+      "title": "AgendaClassSession",
+      "description": "Sessão agendada de aula com alunos alocados, presenças e reposições.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "instructorId": { "type": "string" }
+      },
+      "required": ["id", "date", "time"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Conta a pagar ou despesa operacional do Studio.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "dueDate": { "type": "string" },
+        "isPaid": { "type": "boolean" }
+      },
+      "required": ["id", "description", "amount"]
+    },
+    "ExpenseCategory": {
+      "title": "ExpenseCategory",
+      "description": "Centro de custo ou categoria de despesa.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "MonthlyCommissionClosing": {
+      "title": "MonthlyCommissionClosing",
+      "description": "Fechamento mensal homologado de comissões por professor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "instructorId": { "type": "string" },
+        "month": { "type": "number" },
+        "year": { "type": "number" },
+        "totalFinalCommission": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "instructorId", "month", "year"]
+    },
+    "StudioSetting": {
+      "title": "StudioSetting",
+      "description": "Configuração geral do Studio ou dados corporativos.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "#/entities/UserAccount",
+      "description": "Usuários autorizados do Studio com permissões e credenciais."
+    },
+    "/students/{studentId}": {
+      "schema": "#/entities/Student",
+      "description": "Cadastro completo de alunos do Studio."
+    },
+    "/instructors/{instructorId}": {
+      "schema": "#/entities/Instructor",
+      "description": "Professores e fisioterapeutas com comissões."
+    },
+    "/modalities/{modalityId}": {
+      "schema": "#/entities/Modality",
+      "description": "Modalidades e pacotes de serviços."
+    },
+    "/agendaSessions/{sessionId}": {
+      "schema": "#/entities/AgendaClassSession",
+      "description": "Agenda de atendimentos e sessões."
+    },
+    "/expenses/{expenseId}": {
+      "schema": "#/entities/Expense",
+      "description": "Contas a pagar e despesas financeiras."
+    },
+    "/expenseCategories/{categoryId}": {
+      "schema": "#/entities/ExpenseCategory",
+      "description": "Categorias de despesas."
+    },
+    "/commissionClosings/{closingId}": {
+      "schema": "#/entities/MonthlyCommissionClosing",
+      "description": "Fechamentos mensais de comissões."
+    },
+    "/settings/{settingId}": {
+      "schema": "#/entities/StudioSetting",
+      "description": "Configurações da empresa e horários de funcionamento."
+    }
+  }
+}

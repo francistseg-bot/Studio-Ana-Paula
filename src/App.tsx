@@ -14,7 +14,14 @@ import { AgendaView } from './components/Agenda/AgendaView';
 import { StudentDetailView } from './components/Modals/StudentDetailView';
 import { ContratoModal } from './components/Modals/ContratoModal';
 import { LoginView } from './components/Auth/LoginView';
-import { LogOut } from 'lucide-react';
+import { LogOut, Cloud } from 'lucide-react';
+import { 
+  testFirestoreConnection, 
+  subscribeToCollection, 
+  saveDocument, 
+  saveMultipleDocuments,
+  deleteDocument 
+} from './services/firebase';
 
 import { 
   MainNavigation, 
@@ -46,6 +53,8 @@ import {
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainNavigation>('dashboard');
+
+  const [isCloudConnected, setIsCloudConnected] = useState<boolean>(false);
 
   // State with LocalStorage Persistence
   const [companyData, setCompanyData] = useState<CompanyData>(() =>
@@ -114,7 +123,130 @@ export default function App() {
   // Contract emission modal from StudentDetailView
   const [contractStudent, setContractStudent] = useState<Student | null>(null);
 
-  // Persist to storage
+  // Sincronização em tempo real via Firebase Firestore (Multi-dispositivos: Web e Mobile)
+  useEffect(() => {
+    testFirestoreConnection().then(connected => {
+      setIsCloudConnected(connected);
+    });
+
+    // 1. Usuários compartilhados entre todos os aparelhos
+    const unsubUsers = subscribeToCollection<UserAccount>(
+      'users',
+      (cloudUsers) => {
+        if (cloudUsers && cloudUsers.length > 0) {
+          const masterAccount = cloudUsers.find(
+            u => u.email.trim().toLowerCase() === 'admin@studioanapaula.com.br'
+          );
+          if (!masterAccount) {
+            const master = INITIAL_USERS[0];
+            saveDocument('users', master);
+            setUsers([master, ...cloudUsers]);
+          } else {
+            setUsers(cloudUsers);
+          }
+        }
+      },
+      INITIAL_USERS
+    );
+
+    // 2. Alunos
+    const unsubStudents = subscribeToCollection<Student>(
+      'students',
+      (cloudStudents) => {
+        setStudents(cloudStudents);
+      },
+      INITIAL_STUDENTS
+    );
+
+    // 3. Modalidades
+    const unsubModalities = subscribeToCollection<Modality>(
+      'modalities',
+      (cloudModalities) => {
+        setModalities(cloudModalities);
+      },
+      INITIAL_MODALITIES
+    );
+
+    // 4. Professores
+    const unsubInstructors = subscribeToCollection<Instructor>(
+      'instructors',
+      (cloudInstructors) => {
+        setInstructors(cloudInstructors);
+      },
+      INITIAL_INSTRUCTORS
+    );
+
+    // 5. Sessões e Horários da Agenda
+    const unsubSessions = subscribeToCollection<AgendaClassSession>(
+      'agendaSessions',
+      (cloudSessions) => {
+        setAgendaSessions(cloudSessions);
+      },
+      INITIAL_AGENDA_SESSIONS
+    );
+
+    // 6. Despesas
+    const unsubExpenses = subscribeToCollection<Expense>(
+      'expenses',
+      (cloudExpenses) => {
+        setExpenses(cloudExpenses);
+      },
+      INITIAL_EXPENSES
+    );
+
+    // 7. Categorias de Despesas
+    const unsubCategories = subscribeToCollection<ExpenseCategory>(
+      'expenseCategories',
+      (cloudCategories) => {
+        setExpenseCategories(cloudCategories);
+      },
+      INITIAL_EXPENSE_CATEGORIES
+    );
+
+    // 8. Fechamentos de Comissões
+    const unsubClosings = subscribeToCollection<MonthlyCommissionClosing>(
+      'commissionClosings',
+      (cloudClosings) => {
+        setCommissionClosings(cloudClosings);
+      },
+      []
+    );
+
+    // 9. Configurações gerais (Empresa e Horários de funcionamento)
+    const unsubSettings = subscribeToCollection<{ id: string; [key: string]: any }>(
+      'settings',
+      (cloudSettings) => {
+        const company = cloudSettings.find(s => s.id === 'companyData');
+        if (company) {
+          const { id, ...rest } = company;
+          setCompanyData(rest as CompanyData);
+        }
+        const opConfig = cloudSettings.find(s => s.id === 'operatingConfig');
+        if (opConfig) {
+          const { id, ...rest } = opConfig;
+          setOperatingConfig(rest as StudioOperatingConfig);
+        }
+      },
+      [
+        { id: 'companyData', ...INITIAL_COMPANY_DATA },
+        { id: 'operatingConfig', ...INITIAL_OPERATING_CONFIG }
+      ]
+    );
+
+    return () => {
+      unsubUsers();
+      unsubStudents();
+      unsubModalities();
+      unsubInstructors();
+      unsubSessions();
+      unsubExpenses();
+      unsubCategories();
+      unsubClosings();
+      unsubSettings();
+    };
+  }, []);
+
+  // Persist to local cache for instant cold start
   useEffect(() => {
     setStudioData('companyData', companyData);
   }, [companyData]);
@@ -191,10 +323,12 @@ export default function App() {
       }
       return [closing, ...prev];
     });
+    saveDocument('commissionClosings', closing);
   };
 
   const handleReopenCommissionClosing = (closingId: string) => {
     setCommissionClosings(prev => prev.filter(c => c.id !== closingId));
+    deleteDocument('commissionClosings', closingId);
   };
 
   // Navigation handler from balloons or menus
@@ -277,8 +411,13 @@ export default function App() {
   // Student handlers
   const handleAddStudent = (newStudent: Student) => {
     setStudents((prev) => [newStudent, ...prev]);
+    saveDocument('students', newStudent);
     if (newStudent.enrollment) {
-      setAgendaSessions((prevSessions) => syncStudentToAgenda(newStudent, prevSessions));
+      setAgendaSessions((prevSessions) => {
+        const updated = syncStudentToAgenda(newStudent, prevSessions);
+        saveMultipleDocuments('agendaSessions', updated);
+        return updated;
+      });
     }
   };
 
@@ -286,11 +425,16 @@ export default function App() {
     setStudents((prev) =>
       prev.map((s) => (s.id === updatedStudent.id ? updatedStudent : s))
     );
+    saveDocument('students', updatedStudent);
     if (selectedStudent && selectedStudent.id === updatedStudent.id) {
       setSelectedStudent(updatedStudent);
     }
     // Sincroniza imediatamente com a agenda
-    setAgendaSessions((prevSessions) => syncStudentToAgenda(updatedStudent, prevSessions));
+    setAgendaSessions((prevSessions) => {
+      const updated = syncStudentToAgenda(updatedStudent, prevSessions);
+      saveMultipleDocuments('agendaSessions', updated);
+      return updated;
+    });
   };
 
   // Garante que TODOS os alunos cadastrados com matrícula ativa apareçam na agenda
@@ -309,6 +453,7 @@ export default function App() {
   }, []);
 
   const handleTogglePaymentStatus = (studentId: string, paidAmount?: number, paymentDate?: string) => {
+    let studentToSave: Student | null = null;
     setStudents((prev) =>
       prev.map((s) => {
         if (s.id === studentId && s.enrollment) {
@@ -339,7 +484,7 @@ export default function App() {
             }
           }
 
-          return {
+          const updated: Student = {
             ...s,
             enrollment: {
               ...s.enrollment,
@@ -349,10 +494,16 @@ export default function App() {
               discountAmount: discount,
             },
           };
+          studentToSave = updated;
+          return updated;
         }
         return s;
       })
     );
+
+    if (studentToSave) {
+      saveDocument('students', studentToSave);
+    }
 
     if (selectedStudent && selectedStudent.id === studentId && selectedStudent.enrollment) {
       const isCurrentlyPaid = selectedStudent.enrollment.paymentStatus === 'em_dia';
@@ -389,18 +540,25 @@ export default function App() {
   };
 
   const handleToggleStudentStatus = (studentId: string) => {
+    let studentToSave: Student | null = null;
     setStudents((prev) =>
       prev.map((s) => {
         if (s.id === studentId) {
           const nextStatus = s.status === 'ativo' ? 'inativo' : 'ativo';
-          return {
+          const updated: Student = {
             ...s,
             status: nextStatus,
           };
+          studentToSave = updated;
+          return updated;
         }
         return s;
       })
     );
+
+    if (studentToSave) {
+      saveDocument('students', studentToSave);
+    }
 
     if (selectedStudent && selectedStudent.id === studentId) {
       setSelectedStudent((prev) =>
@@ -418,10 +576,16 @@ export default function App() {
     if (!confirm('Tem certeza que deseja excluir permanentemente o cadastro deste aluno e todas as suas presenças agendadas?')) return;
     
     setStudents((prev) => prev.filter(s => s.id !== studentId));
-    setAgendaSessions((prev) => prev.map(s => ({
-      ...s,
-      students: s.students.filter(slot => slot.studentId !== studentId)
-    })).filter(s => s.students.length > 0));
+    deleteDocument('students', studentId);
+
+    setAgendaSessions((prev) => {
+      const updated = prev.map(s => ({
+        ...s,
+        students: s.students.filter(slot => slot.studentId !== studentId)
+      })).filter(s => s.students.length > 0);
+      saveMultipleDocuments('agendaSessions', updated);
+      return updated;
+    });
 
     if (selectedStudent && selectedStudent.id === studentId) {
       setSelectedStudent(null);
@@ -429,9 +593,20 @@ export default function App() {
   };
 
   const handleSaveStudentSignature = (studentId: string, signature: string) => {
+    let studentToSave: Student | null = null;
     setStudents((prev) =>
-      prev.map((s) => (s.id === studentId ? { ...s, signature } : s))
+      prev.map((s) => {
+        if (s.id === studentId) {
+          const updated = { ...s, signature };
+          studentToSave = updated;
+          return updated;
+        }
+        return s;
+      })
     );
+    if (studentToSave) {
+      saveDocument('students', studentToSave);
+    }
     if (selectedStudent && selectedStudent.id === studentId) {
       setSelectedStudent({ ...selectedStudent, signature });
     }
@@ -443,90 +618,112 @@ export default function App() {
   // Modality handlers
   const handleAddModality = (newMod: Modality) => {
     setModalities((prev) => [...prev, newMod]);
+    saveDocument('modalities', newMod);
   };
 
   const handleUpdateModality = (updatedMod: Modality) => {
     setModalities((prev) =>
       prev.map((m) => (m.id === updatedMod.id ? updatedMod : m))
     );
+    saveDocument('modalities', updatedMod);
   };
 
   const handleDeleteModality = (modId: string) => {
     setModalities((prev) => prev.filter((m) => m.id !== modId));
+    deleteDocument('modalities', modId);
   };
 
   const handleApplyAdjustment = (type: 'percent' | 'fixed', value: number) => {
-    setModalities((prev) =>
-      prev.map((m) => {
-        if (m.billingType === 'reposicao') return m;
-        let newPrice = m.price;
-        if (type === 'percent') {
-          newPrice = Math.round((m.price * (1 + value / 100)) * 100) / 100;
-        } else {
-          newPrice = Math.max(0, Math.round((m.price + value) * 100) / 100);
-        }
-        return {
-          ...m,
-          price: newPrice
-        };
-      })
-    );
+    const adjusted = modalities.map((m) => {
+      if (m.billingType === 'reposicao') return m;
+      let newPrice = m.price;
+      if (type === 'percent') {
+        newPrice = Math.round((m.price * (1 + value / 100)) * 100) / 100;
+      } else {
+        newPrice = Math.max(0, Math.round((m.price + value) * 100) / 100);
+      }
+      return {
+        ...m,
+        price: newPrice
+      };
+    });
+    setModalities(adjusted);
+    saveMultipleDocuments('modalities', adjusted);
     alert(`Reajuste de ${type === 'percent' ? `${value}%` : `R$ ${value.toFixed(2)}`} aplicado com sucesso em todas as modalidades!`);
   };
 
   const handleToggleModalityStatus = (modId: string) => {
     setModalities((prev) =>
-      prev.map((m) => (m.id === modId ? { ...m, active: !m.active } : m))
+      prev.map((m) => {
+        if (m.id === modId) {
+          const updated = { ...m, active: !m.active };
+          saveDocument('modalities', updated);
+          return updated;
+        }
+        return m;
+      })
     );
   };
 
   // Instructor handlers
   const handleAddInstructor = (newInst: Instructor) => {
     setInstructors((prev) => [...prev, newInst]);
+    saveDocument('instructors', newInst);
   };
 
   const handleUpdateInstructor = (updatedInst: Instructor) => {
     setInstructors((prev) =>
       prev.map((i) => (i.id === updatedInst.id ? updatedInst : i))
     );
+    saveDocument('instructors', updatedInst);
   };
 
   const handleDeleteInstructor = (instId: string) => {
     setInstructors((prev) => prev.filter((i) => i.id !== instId));
+    deleteDocument('instructors', instId);
   };
 
   const handleToggleInstructorStatus = (instId: string) => {
     setInstructors((prev) =>
-      prev.map((i) =>
-        i.id === instId
-          ? { ...i, status: i.status === 'Ativo' ? 'Inativo' : 'Ativo' }
-          : i
-      )
+      prev.map((i) => {
+        if (i.id === instId) {
+          const updated: Instructor = { ...i, status: (i.status === 'Ativo' ? 'Inativo' : 'Ativo') as 'Ativo' | 'Inativo' };
+          saveDocument('instructors', updated);
+          return updated;
+        }
+        return i;
+      })
     );
   };
 
   // User handlers
   const handleAddUser = (newUser: UserAccount) => {
     setUsers((prev) => [...prev, newUser]);
+    saveDocument('users', newUser);
   };
 
   const handleUpdateUser = (updatedUser: UserAccount) => {
     setUsers((prev) =>
       prev.map((u) => (u.id === updatedUser.id ? updatedUser : u))
     );
+    saveDocument('users', updatedUser);
   };
 
   const handleDeleteUser = (userId: string) => {
     setUsers((prev) => prev.filter((u) => u.id !== userId));
+    deleteDocument('users', userId);
   };
 
   const handleToggleUserStatus = (userId: string) => {
     setUsers((prev) =>
-      prev.map((u) =>
-        u.id === userId
-          ? { ...u, status: u.status === 'Ativo' ? 'Inativo' : 'Ativo' }
-          : u
-      )
+      prev.map((u) => {
+        if (u.id === userId) {
+          const updated: UserAccount = { ...u, status: (u.status === 'Ativo' ? 'Inativo' : 'Ativo') as 'Ativo' | 'Inativo' };
+          saveDocument('users', updated);
+          return updated;
+        }
+        return u;
+      })
     );
   };
 
@@ -582,8 +779,23 @@ export default function App() {
             </span>
           </div>
 
-          {/* User Profile Bar & Logout */}
+          {/* User Profile Bar & Cloud Status & Logout */}
           <div className="flex items-center gap-2.5 text-xs shrink-0">
+            {/* Indicador de Sincronização em Nuvem (Multi-dispositivos Web e Mobile) */}
+            <div 
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs ${
+                isCloudConnected 
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200/90' 
+                  : 'bg-zinc-50 text-zinc-600 border-zinc-200'
+              }`}
+              title="Sincronização em tempo real na nuvem (Firestore) ativa para acesso simultâneo em computadores e celulares"
+            >
+              <Cloud className={`w-3.5 h-3.5 ${isCloudConnected ? 'text-emerald-600' : 'text-zinc-400'}`} />
+              <span className="font-medium text-[11px]">
+                {isCloudConnected ? 'Nuvem Conectada' : 'Conectando à Nuvem...'}
+              </span>
+            </div>
+
             <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-zinc-50 border border-zinc-200/80">
               <div className="w-5 h-5 rounded-full bg-teal-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
                 {currentUser?.name ? currentUser.name[0] : 'U'}
@@ -620,7 +832,10 @@ export default function App() {
           {currentTab === 'cadastros-empresa' && (
             <EmpresaView
               companyData={companyData}
-              onSaveCompanyData={setCompanyData}
+              onSaveCompanyData={(data) => {
+                setCompanyData(data);
+                saveDocument('settings', { id: 'companyData', ...data });
+              }}
             />
           )}
 
@@ -679,8 +894,14 @@ export default function App() {
           {currentTab === 'cadastros-despesas' && (
             <DespesasView
               categories={expenseCategories}
-              onAddCategory={(cat) => setExpenseCategories(prev => [...prev, cat])}
-              onDeleteCategory={(id) => setExpenseCategories(prev => prev.filter(c => c.id !== id))}
+              onAddCategory={(cat) => {
+                setExpenseCategories(prev => [...prev, cat]);
+                saveDocument('expenseCategories', cat);
+              }}
+              onDeleteCategory={(id) => {
+                setExpenseCategories(prev => prev.filter(c => c.id !== id));
+                deleteDocument('expenseCategories', id);
+              }}
             />
           )}
 
@@ -691,8 +912,14 @@ export default function App() {
               students={students}
               modalities={modalities}
               operatingConfig={operatingConfig}
-              onUpdateSessions={setAgendaSessions}
-              onUpdateOperatingConfig={setOperatingConfig}
+              onUpdateSessions={(updated) => {
+                setAgendaSessions(updated);
+                saveMultipleDocuments('agendaSessions', updated);
+              }}
+              onUpdateOperatingConfig={(cfg) => {
+                setOperatingConfig(cfg);
+                saveDocument('settings', { id: 'operatingConfig', ...cfg });
+              }}
               onSelectStudentDetail={(student) => setSelectedStudent(student)}
             />
           )}
@@ -701,19 +928,29 @@ export default function App() {
             <ContrasAPagarView
               expenses={expenses}
               categories={expenseCategories}
-              onAddExpense={(exp) => setExpenses(prev => [exp, ...prev])}
-              onTogglePaid={(id, effectiveDate) => setExpenses(prev => prev.map(e => {
-                if (e.id === id) {
-                  const willBePaid = !e.isPaid;
-                  return {
-                    ...e,
-                    isPaid: willBePaid,
-                    paymentDate: willBePaid ? (effectiveDate || new Date().toISOString().split('T')[0]) : undefined
-                  };
-                }
-                return e;
-              }))}
-              onDeleteExpense={(id) => setExpenses(prev => prev.filter(e => e.id !== id))}
+              onAddExpense={(exp) => {
+                setExpenses(prev => [exp, ...prev]);
+                saveDocument('expenses', exp);
+              }}
+              onTogglePaid={(id, effectiveDate) => {
+                setExpenses(prev => prev.map(e => {
+                  if (e.id === id) {
+                    const willBePaid = !e.isPaid;
+                    const updated = {
+                      ...e,
+                      isPaid: willBePaid,
+                      paymentDate: willBePaid ? (effectiveDate || new Date().toISOString().split('T')[0]) : undefined
+                    };
+                    saveDocument('expenses', updated);
+                    return updated;
+                  }
+                  return e;
+                }));
+              }}
+              onDeleteExpense={(id) => {
+                setExpenses(prev => prev.filter(e => e.id !== id));
+                deleteDocument('expenses', id);
+              }}
             />
           )}
 
@@ -725,7 +962,7 @@ export default function App() {
               onUpdateFee={(studentId, newFee, dueDay) => {
                 setStudents(prev => prev.map(s => {
                   if (s.id === studentId && s.enrollment) {
-                    return {
+                    const updated = {
                       ...s,
                       enrollment: {
                         ...s.enrollment,
@@ -733,6 +970,8 @@ export default function App() {
                         dueDay: dueDay
                       }
                     };
+                    saveDocument('students', updated);
+                    return updated;
                   }
                   return s;
                 }));
@@ -741,7 +980,9 @@ export default function App() {
                 setStudents(prev => prev.map(s => {
                   if (s.id === studentId) {
                     const { enrollment, ...rest } = s;
-                    return { ...rest };
+                    const updated = { ...rest };
+                    saveDocument('students', updated);
+                    return updated;
                   }
                   return s;
                 }));

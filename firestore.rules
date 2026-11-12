@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Regras de segurança para o Studio Ana Paula Rodrigues
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+    
+    match /students/{studentId} {
+      allow read, write: if true;
+    }
+    
+    match /instructors/{instructorId} {
+      allow read, write: if true;
+    }
+    
+    match /modalities/{modalityId} {
+      allow read, write: if true;
+    }
+    
+    match /agendaSessions/{sessionId} {
+      allow read, write: if true;
+    }
+    
+    match /expenses/{expenseId} {
+      allow read, write: if true;
+    }
+    
+    match /expenseCategories/{categoryId} {
+      allow read, write: if true;
+    }
+    
+    match /commissionClosings/{closingId} {
+      allow read, write: if true;
+    }
+    
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}
