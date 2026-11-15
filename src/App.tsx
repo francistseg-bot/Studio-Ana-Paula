@@ -53,6 +53,7 @@ import {
   getStudioData,
   setStudioData
 } from './data/studioData';
+import { toLocalIsoDate } from './utils/agendaProjection';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainNavigation>('dashboard');
@@ -373,44 +374,70 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Sync a student's enrollment into agenda sessions (for all active enrolled students)
-  const syncStudentToAgenda = (student: Student, currentSessions: AgendaClassSession[]): AgendaClassSession[] => {
-    let newSessions = [...currentSessions];
+  // Sync a student's enrollment into agenda sessions (immutable & local-timezone safe)
+  const syncStudentToAgenda = (
+    student: Student,
+    currentSessions: AgendaClassSession[]
+  ): { allSessions: AgendaClassSession[]; changedSessions: AgendaClassSession[] } => {
+    const changedIds = new Set<string>();
 
-    // First remove this student from any slot that was created automatically via previous enrollment
-    newSessions = newSessions.map(sess => ({
-      ...sess,
-      students: sess.students.filter(sl => sl.studentId !== student.id || sl.notes?.includes('Reposição'))
-    }));
+    // Remove auto-generated regular slots for this student before re-applying (preserves reposições e presenças/faltas já marcadas)
+    const nextSessions: AgendaClassSession[] = currentSessions.map(sess => {
+      const hadAutoSlot = sess.students.some(
+        sl => sl.studentId === student.id && !sl.notes?.includes('Reposição') && !sl.isReplacement
+      );
+      if (!hadAutoSlot) {
+        return sess;
+      }
+      changedIds.add(sess.id);
+      return {
+        ...sess,
+        students: sess.students.filter(
+          sl => sl.studentId !== student.id || sl.notes?.includes('Reposição') || sl.isReplacement
+        ),
+      };
+    });
 
-    // If student is not active or has no enrollment, return the cleaned sessions
     if (student.status !== 'ativo' || !student.enrollment) {
-      return newSessions;
+      return {
+        allSessions: nextSessions,
+        changedSessions: nextSessions.filter(s => changedIds.has(s.id)),
+      };
     }
 
     const { scheduleDays, scheduleTime, instructorId, instructorName, modalityName } = student.enrollment;
     const daysOfWeekMap: Record<string, number> = {
-      'Domingo': 0, 'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6
+      Domingo: 0,
+      Segunda: 1,
+      Terça: 2,
+      Quarta: 3,
+      Quinta: 4,
+      Sexta: 5,
+      Sábado: 6,
     };
 
     const today = new Date();
+    const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0);
+    const diffToMonday = monday.getDay() === 0 ? -6 : 1 - monday.getDay();
+    monday.setDate(monday.getDate() + diffToMonday);
 
-    // Schedule for the next 4 weeks
+    // Sincroniza da segunda-feira da semana atual até as próximas 4 semanas
     for (let week = 0; week < 4; week++) {
       for (const dayName of scheduleDays) {
         const dayOfWeek = daysOfWeekMap[dayName];
         if (dayOfWeek === undefined) continue;
 
-        const sessionDate = new Date(today);
-        sessionDate.setDate(today.getDate() + (week * 7) + (dayOfWeek - today.getDay()));
-        const dateIso = sessionDate.toISOString().split('T')[0];
+        const offsetFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const sessionDate = new Date(monday);
+        sessionDate.setDate(monday.getDate() + week * 7 + offsetFromMonday);
+        const dateIso = toLocalIsoDate(sessionDate);
 
-        let session = newSessions.find(
+        let sessionIndex = nextSessions.findIndex(
           s => s.date === dateIso && s.time === scheduleTime && s.instructorId === instructorId
         );
 
-        if (!session) {
-          session = {
+        if (sessionIndex === -1) {
+          const created: AgendaClassSession = {
             id: `sess-${dateIso}-${scheduleTime.replace(':', '')}-${instructorId}`,
             date: dateIso,
             time: scheduleTime,
@@ -418,26 +445,41 @@ export default function App() {
             instructorName,
             modalityName,
             maxCapacity: operatingConfig.defaultCapacity || 4,
-            students: []
+            students: [],
           };
-          newSessions.push(session);
+          nextSessions.push(created);
+          sessionIndex = nextSessions.length - 1;
         }
 
-        if (!session.students.find(sl => sl.studentId === student.id)) {
-          session.students.push({
-            id: `slot-${student.id}-${dateIso}-${scheduleTime.replace(':', '')}`,
-            studentId: student.id,
-            studentName: student.name,
-            studentPhone: student.phone,
-            studentPhoto: student.photoUrl,
-            attendanceStatus: 'agendado',
-            notes: `Matrícula: ${modalityName} (${dayName}s ${scheduleTime})`
-          });
+        const targetSession = nextSessions[sessionIndex];
+        const isRemovedForDate = targetSession.removedStudentIds?.includes(student.id);
+        const alreadyInSlot = targetSession.students.some(sl => sl.studentId === student.id);
+
+        if (!isRemovedForDate && !alreadyInSlot) {
+          nextSessions[sessionIndex] = {
+            ...targetSession,
+            students: [
+              ...targetSession.students,
+              {
+                id: `slot-${student.id}-${dateIso}-${scheduleTime.replace(':', '')}`,
+                studentId: student.id,
+                studentName: student.name,
+                studentPhone: student.phone,
+                studentPhoto: student.photoUrl,
+                attendanceStatus: 'agendado',
+                notes: `Matrícula: ${modalityName} (${dayName}s ${scheduleTime})`,
+              },
+            ],
+          };
+          changedIds.add(targetSession.id);
         }
       }
     }
 
-    return newSessions;
+    return {
+      allSessions: nextSessions,
+      changedSessions: nextSessions.filter(s => changedIds.has(s.id)),
+    };
   };
 
   // Student handlers
@@ -445,11 +487,11 @@ export default function App() {
     setStudents((prev) => [newStudent, ...prev]);
     saveDocument('students', newStudent);
     if (newStudent.enrollment) {
-      setAgendaSessions((prevSessions) => {
-        const updated = syncStudentToAgenda(newStudent, prevSessions);
-        saveMultipleDocuments('agendaSessions', updated);
-        return updated;
-      });
+      const { allSessions, changedSessions } = syncStudentToAgenda(newStudent, agendaSessions);
+      setAgendaSessions(allSessions);
+      if (changedSessions.length > 0) {
+        saveMultipleDocuments('agendaSessions', changedSessions);
+      }
     }
   };
 
@@ -462,27 +504,12 @@ export default function App() {
       setSelectedStudent(updatedStudent);
     }
     // Sincroniza imediatamente com a agenda
-    setAgendaSessions((prevSessions) => {
-      const updated = syncStudentToAgenda(updatedStudent, prevSessions);
-      saveMultipleDocuments('agendaSessions', updated);
-      return updated;
-    });
-  };
-
-  // Garante que TODOS os alunos cadastrados com matrícula ativa apareçam na agenda
-  useEffect(() => {
-    let synced = [...agendaSessions];
-    students.forEach(st => {
-      if (st.status === 'ativo' && st.enrollment) {
-        synced = syncStudentToAgenda(st, synced);
-      }
-    });
-    // Apenas atualiza se houve mudança estrutural de alunos
-    if (synced.length !== agendaSessions.length || 
-        synced.reduce((acc, s) => acc + s.students.length, 0) !== agendaSessions.reduce((acc, s) => acc + s.students.length, 0)) {
-      setAgendaSessions(synced);
+    const { allSessions, changedSessions } = syncStudentToAgenda(updatedStudent, agendaSessions);
+    setAgendaSessions(allSessions);
+    if (changedSessions.length > 0) {
+      saveMultipleDocuments('agendaSessions', changedSessions);
     }
-  }, []);
+  };
 
   const handleTogglePaymentStatus = (
     studentId: string,
@@ -586,35 +613,28 @@ export default function App() {
   };
 
   const handleToggleStudentStatus = (studentId: string) => {
-    let studentToSave: Student | null = null;
-    setStudents((prev) =>
-      prev.map((s) => {
-        if (s.id === studentId) {
-          const nextStatus = s.status === 'ativo' ? 'inativo' : 'ativo';
-          const updated: Student = {
-            ...s,
-            status: nextStatus,
-          };
-          studentToSave = updated;
-          return updated;
-        }
-        return s;
-      })
-    );
+    const existing = students.find(s => s.id === studentId);
+    if (!existing) return;
 
-    if (studentToSave) {
-      saveDocument('students', studentToSave);
+    const nextStatus: 'ativo' | 'inativo' = existing.status === 'ativo' ? 'inativo' : 'ativo';
+    const updatedStudent: Student = {
+      ...existing,
+      status: nextStatus,
+    };
+
+    setStudents((prev) =>
+      prev.map((s) => (s.id === studentId ? updatedStudent : s))
+    );
+    saveDocument('students', updatedStudent);
+
+    const { allSessions, changedSessions } = syncStudentToAgenda(updatedStudent, agendaSessions);
+    setAgendaSessions(allSessions);
+    if (changedSessions.length > 0) {
+      saveMultipleDocuments('agendaSessions', changedSessions);
     }
 
     if (selectedStudent && selectedStudent.id === studentId) {
-      setSelectedStudent((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: prev.status === 'ativo' ? 'inativo' : 'ativo',
-            }
-          : null
-      );
+      setSelectedStudent(updatedStudent);
     }
   };
 

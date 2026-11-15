@@ -38,6 +38,11 @@ import {
   getSlotsForDay,
   getAllEnabledSlotsForWeek
 } from '../../utils/scheduleSlots';
+import {
+  getProjectedSessionFor,
+  getProjectedSessionsForDate,
+  toLocalIsoDate
+} from '../../utils/agendaProjection';
 
 interface AgendaViewProps {
   sessions: AgendaClassSession[];
@@ -63,8 +68,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   // Current view mode: 'dia', 'semana', 'mes' (Requested by Francis)
   const [viewMode, setViewMode] = useState<AgendaViewMode>('dia');
 
-  // Selected date ISO (YYYY-MM-DD)
-  const todayIso = new Date().toISOString().split('T')[0];
+  // Selected date ISO (YYYY-MM-DD, local timezone)
+  const todayIso = toLocalIsoDate(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(todayIso);
 
   // Filter by instructor ('all' or specific instructorId) (Requested by Francis)
@@ -89,7 +94,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
     } else {
       d.setMonth(d.getMonth() - 1);
     }
-    setSelectedDate(d.toISOString().split('T')[0]);
+    setSelectedDate(toLocalIsoDate(d));
   };
 
   const handleNext = () => {
@@ -101,7 +106,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
     } else {
       d.setMonth(d.getMonth() + 1);
     }
-    setSelectedDate(d.toISOString().split('T')[0]);
+    setSelectedDate(toLocalIsoDate(d));
   };
 
   const handleToday = () => {
@@ -133,7 +138,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
     for (let i = 0; i < 6; i++) { // Mon to Sat
       const nextD = new Date(monday);
       nextD.setDate(monday.getDate() + i);
-      const iso = nextD.toISOString().split('T')[0];
+      const iso = toLocalIsoDate(nextD);
       const names = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
       weekDays.push({
         date: iso,
@@ -147,101 +152,129 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   const weekDates = getWeekDates(selectedDate);
   const selectedDayOfWeek = new Date(selectedDate + 'T12:00:00').getDay();
 
-  // Horários dinâmicos para a grade semanal baseados em operatingConfig
+  // Active instructors for display
+  const activeInstructors = instructors.filter(i => i.status === 'Ativo');
+  const displayedInstructors = instructorFilter === 'all'
+    ? activeInstructors
+    : activeInstructors.filter(i => i.id === instructorFilter);
+
+  // Horários dinâmicos para a grade semanal baseados em operatingConfig + matrículas projetadas
   const weeklyTimeSlots = (() => {
     const configured = getAllEnabledSlotsForWeek(operatingConfig, instructorFilter);
     const weekDateSet = new Set(weekDates.map(d => d.date));
     const sessionTimes = sessions
       .filter(s => weekDateSet.has(s.date) && s.students.length > 0 && (instructorFilter === 'all' || s.instructorId === instructorFilter))
       .map(s => s.time);
-    const merged = Array.from(new Set([...configured, ...sessionTimes])).sort();
-    return merged;
+    const enrolledTimes = students
+      .filter(st => st.status === 'ativo' && st.enrollment?.scheduleTime && (instructorFilter === 'all' || st.enrollment.instructorId === instructorFilter))
+      .map(st => st.enrollment!.scheduleTime);
+    return Array.from(new Set([...configured, ...sessionTimes, ...enrolledTimes])).sort();
   })();
 
-  // Helper to get or create a session in state
+  // Helper to get saved + projected session
   const getSessionFor = (date: string, time: string, instructorId: string): AgendaClassSession => {
-    const existing = sessions.find(
-      s => s.date === date && s.time === time && s.instructorId === instructorId
-    );
-    if (existing) return existing;
-
     const inst = instructors.find(i => i.id === instructorId) || instructors[0];
-    return {
-      id: `sess-${date}-${time.replace(':', '')}-${instructorId}`,
+    if (!inst) {
+      return {
+        id: `sess-${date}-${time.replace(':', '')}-${instructorId}`,
+        date,
+        time,
+        instructorId,
+        instructorName: 'Professor',
+        modalityName: 'Pilates em Aparelhos',
+        maxCapacity: operatingConfig.defaultCapacity || 4,
+        students: []
+      };
+    }
+    return getProjectedSessionFor({
       date,
       time,
-      instructorId,
-      instructorName: inst.name,
-      modalityName: 'Pilates em Aparelhos',
-      maxCapacity: operatingConfig.defaultCapacity || 4,
-      students: []
-    };
+      instructor: inst,
+      sessions,
+      students,
+      operatingConfig,
+    });
   };
 
-  // Presence and Absence flag handlers
+  // Helper: upsert a session cleanly in sessions array
+  const upsertSession = (currentSessions: AgendaClassSession[], nextSession: AgendaClassSession): AgendaClassSession[] => {
+    const exists = currentSessions.some(s => s.id === nextSession.id);
+    if (exists) {
+      return currentSessions.map(s => (s.id === nextSession.id ? nextSession : s));
+    }
+    return [...currentSessions, nextSession];
+  };
+
+  // Presence and Absence flag handlers (materializes projected session if needed)
   const handleUpdateAttendance = (
-    sessionId: string,
+    baseSession: AgendaClassSession,
     slotId: string,
     newStatus: AttendanceStatus,
     notes?: string
   ) => {
-    const updated = sessions.map(sess => {
-      if (sess.id === sessionId) {
-        return {
-          ...sess,
-          students: sess.students.map(slot => {
-            if (slot.id === slotId) {
-              return {
-                ...slot,
-                attendanceStatus: newStatus,
-                notes: notes || slot.notes
-              };
-            }
-            return slot;
-          })
-        };
-      }
-      return sess;
-    });
+    const updatedSession: AgendaClassSession = {
+      ...baseSession,
+      students: baseSession.students.map(slot => {
+        if (slot.id === slotId) {
+          return {
+            ...slot,
+            attendanceStatus: newStatus,
+            notes: notes || slot.notes
+          };
+        }
+        return slot;
+      })
+    };
 
-    onUpdateSessions(updated);
+    onUpdateSessions(upsertSession(sessions, updatedSession));
     setAbsenceMenuSlotId(null);
   };
 
-  // Add student to session
+  // Add student to session (preserves exact time, date and instructor of clicked slot)
   const handleAddStudentToSlot = (sessionId: string, newSlot: ClassStudentSlot) => {
-    const sessionExists = sessions.some(s => s.id === sessionId);
-    if (sessionExists) {
-      onUpdateSessions(
-        sessions.map(s => s.id === sessionId ? { ...s, students: [...s.students, newSlot] } : s)
-      );
-    } else {
-      // Find time, date and instructor from sessionId or add directly
-      const parts = sessionId.split('-'); // sess-YYYY-MM-DD-HHMM-inst-X
-      const date = parts.slice(1, 4).join('-');
-      const instId = parts.slice(5).join('-');
-      const inst = instructors.find(i => i.id === instId) || instructors[0];
+    const baseSession =
+      (addStudentSession && addStudentSession.id === sessionId ? addStudentSession : undefined) ||
+      sessions.find(s => s.id === sessionId);
 
-      const newSession: AgendaClassSession = {
-        id: sessionId,
-        date: date || selectedDate,
-        time: '08:00',
-        instructorId: inst.id,
-        instructorName: inst.name,
-        modalityName: 'Pilates em Aparelhos',
-        maxCapacity: 4,
-        students: [newSlot]
+    if (baseSession) {
+      const nextRemoved = (baseSession.removedStudentIds || []).filter(id => id !== newSlot.studentId);
+      const updatedSession: AgendaClassSession = {
+        ...baseSession,
+        students: [...baseSession.students, newSlot],
+        ...(nextRemoved.length > 0 ? { removedStudentIds: nextRemoved } : {}),
       };
-      onUpdateSessions([...sessions, newSession]);
+      if (!nextRemoved.length && 'removedStudentIds' in updatedSession) {
+        delete updatedSession.removedStudentIds;
+      }
+      onUpdateSessions(upsertSession(sessions, updatedSession));
+      return;
     }
+
+    const inst = instructors[0];
+    if (!inst) return;
+    const newSession: AgendaClassSession = {
+      id: sessionId,
+      date: selectedDate,
+      time: '08:00',
+      instructorId: inst.id,
+      instructorName: inst.name,
+      modalityName: 'Pilates em Aparelhos',
+      maxCapacity: operatingConfig.defaultCapacity || 4,
+      students: [newSlot]
+    };
+    onUpdateSessions([...sessions, newSession]);
   };
 
-  // Remove student from slot
-  const handleRemoveStudentFromSlot = (sessionId: string, slotId: string) => {
-    if (!confirm('Deseja remover este aluno do horário?')) return;
-    onUpdateSessions(
-      sessions.map(s => s.id === sessionId ? { ...s, students: s.students.filter(slot => slot.id !== slotId) } : s)
-    );
+  // Remove student from slot (tracks removedStudentIds so recurring projection stays removed for this date)
+  const handleRemoveStudentFromSlot = (baseSession: AgendaClassSession, slot: ClassStudentSlot) => {
+    if (!confirm('Deseja remover este aluno apenas deste horário?')) return;
+    const nextRemoved = Array.from(new Set([...(baseSession.removedStudentIds || []), slot.studentId]));
+    const updatedSession: AgendaClassSession = {
+      ...baseSession,
+      students: baseSession.students.filter(sl => sl.id !== slot.id),
+      removedStudentIds: nextRemoved,
+    };
+    onUpdateSessions(upsertSession(sessions, updatedSession));
   };
 
   // Confirm Rescheduling (Remarcação de aula com aviso prévio)
@@ -253,23 +286,18 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
     targetInstructorId: string,
     additionalCommission: number
   ) => {
-    // 1. Mark original slot as remarcado
-    let studentToMove: ClassStudentSlot | null = null;
-    const sourceSess = sessions.find(s => s.id === sourceSessionId);
-    if (sourceSess) {
-      const originalSlot = sourceSess.students.find(sl => sl.id === slotId);
-      if (originalSlot) {
-        studentToMove = originalSlot;
-      }
-    }
+    const sourceSess =
+      (rescheduleData?.session.id === sourceSessionId ? rescheduleData.session : undefined) ||
+      sessions.find(s => s.id === sourceSessionId);
+    const studentToMove = sourceSess?.students.find(sl => sl.id === slotId);
 
-    if (!studentToMove) return;
+    if (!sourceSess || !studentToMove) return;
 
     const targetInst = instructors.find(i => i.id === targetInstructorId) || instructors[0];
-    const originalInst = instructors.find(i => i.id === sourceSess?.instructorId) || instructors[0];
+    const originalInst = instructors.find(i => i.id === sourceSess.instructorId) || instructors[0];
 
     // Create the replacement slot for the target session
-    const isDifferentTeacher = targetInstructorId !== sourceSess?.instructorId;
+    const isDifferentTeacher = targetInstructorId !== sourceSess.instructorId;
     const replacementSlot: ClassStudentSlot = {
       id: `slot-rep-${Date.now()}`,
       studentId: studentToMove.studentId,
@@ -278,84 +306,43 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
       studentPhoto: studentToMove.studentPhoto,
       attendanceStatus: 'agendado',
       isReplacement: true,
-      originalInstructorId: sourceSess?.instructorId,
-      originalInstructorName: originalInst.name,
+      originalInstructorId: sourceSess.instructorId,
+      originalInstructorName: originalInst?.name || sourceSess.instructorName,
       additionalCommissionPaid: additionalCommission,
-      notes: `Reposição de aula perdida em ${sourceSess?.date} às ${sourceSess?.time}. ${isDifferentTeacher ? `Professor substituto: + R$ ${additionalCommission.toFixed(2)}` : ''}`
+      notes: `Reposição de aula perdida em ${sourceSess.date} às ${sourceSess.time}. ${isDifferentTeacher ? `Professor substituto: + R$ ${additionalCommission.toFixed(2)}` : ''}`
     };
 
-    // Update sessions state
-    let targetSession = sessions.find(
-      s => s.date === targetDate && s.time === targetTime && s.instructorId === targetInstructorId
-    );
-
-    let updatedSessions: AgendaClassSession[];
-
-    if (targetSession) {
-      updatedSessions = sessions.map(sess => {
-        if (sess.id === sourceSessionId) {
-          return {
-            ...sess,
-            students: sess.students.map(sl => sl.id === slotId ? {
+    const updatedSourceSession: AgendaClassSession = {
+      ...sourceSess,
+      students: sourceSess.students.map(sl =>
+        sl.id === slotId
+          ? {
               ...sl,
               attendanceStatus: 'remarcado',
               rescheduledToDate: targetDate,
               rescheduledToTime: targetTime,
               rescheduledToInstructorId: targetInstructorId,
-              rescheduledToInstructorName: targetInst.name
-            } : sl)
-          };
-        }
-        if (sess.id === targetSession!.id) {
-          return {
-            ...sess,
-            students: [...sess.students, replacementSlot]
-          };
-        }
-        return sess;
-      });
-    } else {
-      // Create target session if not existing yet
-      const newTargetSession: AgendaClassSession = {
-        id: `sess-${targetDate}-${targetTime.replace(':', '')}-${targetInstructorId}`,
-        date: targetDate,
-        time: targetTime,
-        instructorId: targetInstructorId,
-        instructorName: targetInst.name,
-        modalityName: 'Pilates em Aparelhos',
-        maxCapacity: 4,
-        students: [replacementSlot]
-      };
+              rescheduledToInstructorName: targetInst?.name || ''
+            }
+          : sl
+      )
+    };
 
-      updatedSessions = sessions.map(sess => {
-        if (sess.id === sourceSessionId) {
-          return {
-            ...sess,
-            students: sess.students.map(sl => sl.id === slotId ? {
-              ...sl,
-              attendanceStatus: 'remarcado',
-              rescheduledToDate: targetDate,
-              rescheduledToTime: targetTime,
-              rescheduledToInstructorId: targetInstructorId,
-              rescheduledToInstructorName: targetInst.name
-            } : sl)
-          };
-        }
-        return sess;
-      });
+    let nextSessions = upsertSession(sessions, updatedSourceSession);
 
-      updatedSessions.push(newTargetSession);
-    }
+    const projectedTarget = getSessionFor(targetDate, targetTime, targetInstructorId);
+    const updatedTargetSession: AgendaClassSession = {
+      ...projectedTarget,
+      students: [...projectedTarget.students, replacementSlot]
+    };
 
-    onUpdateSessions(updatedSessions);
-    alert(`Aula remarcada com sucesso para ${targetDate} às ${targetTime} com ${targetInst.name}!`);
+    nextSessions = upsertSession(nextSessions, updatedTargetSession);
+
+    onUpdateSessions(nextSessions);
+    alert(`Aula remarcada com sucesso para ${targetDate} às ${targetTime} com ${targetInst?.name || ''}!`);
   };
 
-  // Active instructors for display
-  const activeInstructors = instructors.filter(i => i.status === 'Ativo');
-  const displayedInstructors = instructorFilter === 'all' 
-    ? activeInstructors 
-    : activeInstructors.filter(i => i.id === instructorFilter);
+  // Instructors already resolved above for weeklyTimeSlots
 
   return (
     <div className="space-y-6">
@@ -518,15 +505,42 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   {(() => {
                     const instSchedule = getEffectiveScheduleForInstructor(operatingConfig, instructor.id);
                     const configuredSlots = getSlotsForDay(instSchedule, selectedDayOfWeek);
-                    const existingTimes = sessions
-                      .filter(s => s.date === selectedDate && s.instructorId === instructor.id && s.students.length > 0)
-                      .map(s => s.time);
+                    const projectedForInstructor = getProjectedSessionsForDate({
+                      date: selectedDate,
+                      instructors: [instructor],
+                      sessions,
+                      students,
+                      operatingConfig,
+                    });
+                    const existingTimes = projectedForInstructor.map(s => s.time);
                     const daySlots = Array.from(new Set([...configuredSlots, ...existingTimes])).sort();
 
                     if (daySlots.length === 0) {
                       return (
-                        <div className="p-6 text-center text-xs text-zinc-500">
-                          Nenhum horário de atendimento configurado para este dia em <strong>Ajustar Horários</strong>.
+                        <div className="p-6 text-center text-xs text-zinc-500 space-y-2.5">
+                          <p>
+                            Nenhum horário de atendimento configurado para este dia em <strong>Ajustar Horários</strong>.
+                          </p>
+                          <div className="flex items-center justify-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => setViewMode('semana')}
+                              className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold text-xs transition-colors"
+                            >
+                              Ver Grade da Semana
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const d = new Date(selectedDate + 'T12:00:00');
+                                d.setDate(d.getDate() + 1);
+                                setSelectedDate(toLocalIsoDate(d));
+                              }}
+                              className="px-3 py-1.5 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 font-semibold text-xs transition-colors"
+                            >
+                              Ir para Próximo Dia →
+                            </button>
+                          </div>
                         </div>
                       );
                     }
@@ -598,9 +612,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                         </span>
 
                                         <button
-                                          onClick={() => handleRemoveStudentFromSlot(session.id, slot.id)}
+                                          onClick={() => handleRemoveStudentFromSlot(session, slot)}
                                           className="text-zinc-400 hover:text-rose-600 p-0.5"
-                                          title="Remover do horário"
+                                          title="Remover deste horário"
                                         >
                                           <Trash2 className="w-3 h-3" />
                                         </button>
@@ -640,7 +654,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                         {/* Flag Presente */}
                                         <button
                                           type="button"
-                                          onClick={() => handleUpdateAttendance(session.id, slot.id, 'presente')}
+                                          onClick={() => handleUpdateAttendance(session, slot.id, 'presente')}
                                           className={`flex-1 py-1 px-1.5 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-all ${
                                             isPresente
                                               ? 'bg-emerald-600 text-white shadow-2xs'
@@ -678,7 +692,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                               {/* COM AVISO PRÉVIO */}
                                               <button
                                                 type="button"
-                                                onClick={() => handleUpdateAttendance(session.id, slot.id, 'falta_com_aviso', 'Aviso prévio confirmado.')}
+                                                onClick={() => handleUpdateAttendance(session, slot.id, 'falta_com_aviso', 'Aviso prévio confirmado.')}
                                                 className="w-full text-left p-1.5 rounded-lg hover:bg-amber-50 text-amber-900 font-semibold flex items-center gap-1.5"
                                               >
                                                 <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -691,7 +705,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                               {/* SEM AVISO PRÉVIO */}
                                               <button
                                                 type="button"
-                                                onClick={() => handleUpdateAttendance(session.id, slot.id, 'falta_sem_aviso', 'Não compareceu sem justificativa.')}
+                                                onClick={() => handleUpdateAttendance(session, slot.id, 'falta_sem_aviso', 'Não compareceu sem justificativa.')}
                                                 className="w-full text-left p-1.5 rounded-lg hover:bg-rose-50 text-rose-900 font-semibold flex items-center gap-1.5 mt-1"
                                               >
                                                 <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
@@ -806,14 +820,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
                   {/* Day cells */}
                   {weekDates.map((d) => {
-                    // Gather all sessions on that date and time matching instructorFilter
-                    const matchingSessions = sessions.filter(s => {
-                      if (s.date !== d.date || s.time !== time) return false;
-                      if (instructorFilter !== 'all' && s.instructorId !== instructorFilter) return false;
-                      return true;
-                    });
-
-                    const totalStudents = matchingSessions.reduce((acc, s) => acc + s.students.length, 0);
+                    const matchingSessions = getProjectedSessionsForDate({
+                      date: d.date,
+                      instructors: displayedInstructors,
+                      sessions,
+                      students,
+                      operatingConfig,
+                    }).filter(s => s.time === time);
 
                     return (
                       <div
@@ -895,16 +908,18 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               const dayDate = new Date(firstDayOfMonth);
               dayDate.setDate(1 - startDayOffset + index);
 
-              const iso = dayDate.toISOString().split('T')[0];
+              const iso = toLocalIsoDate(dayDate);
               const isCurrentMonth = dayDate.getMonth() === currentMonthDate.getMonth();
               const isToday = iso === todayIso;
               const isSelected = iso === selectedDate;
 
-              // Sessions on this day
-              const daySessions = sessions.filter(s => {
-                if (s.date !== iso) return false;
-                if (instructorFilter !== 'all' && s.instructorId !== instructorFilter) return false;
-                return true;
+              // Sessions on this day (saved + projected enrollments)
+              const daySessions = getProjectedSessionsForDate({
+                date: iso,
+                instructors: displayedInstructors,
+                sessions,
+                students,
+                operatingConfig,
               });
 
               const studentCount = daySessions.reduce((acc, s) => acc + s.students.length, 0);
@@ -990,6 +1005,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           slot={rescheduleData.slot}
           sourceSession={rescheduleData.session}
           sessions={sessions}
+          students={students}
           instructors={activeInstructors}
           modalities={modalities}
           operatingConfig={operatingConfig}

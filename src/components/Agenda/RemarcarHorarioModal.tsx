@@ -16,14 +16,17 @@ import {
   AgendaClassSession, 
   Instructor, 
   Modality,
+  Student,
   StudioOperatingConfig
 } from '../../types/studio';
 import { getEffectiveScheduleForInstructor, getSlotsForDay } from '../../utils/scheduleSlots';
+import { getProjectedSessionFor, toLocalIsoDate } from '../../utils/agendaProjection';
 
 interface RemarcarHorarioModalProps {
   slot: ClassStudentSlot;
   sourceSession: AgendaClassSession;
   sessions: AgendaClassSession[];
+  students: Student[];
   instructors: Instructor[];
   modalities: Modality[];
   operatingConfig: StudioOperatingConfig;
@@ -42,16 +45,17 @@ export const RemarcarHorarioModal: React.FC<RemarcarHorarioModalProps> = ({
   slot,
   sourceSession,
   sessions,
+  students,
   instructors,
   modalities,
   operatingConfig,
   onConfirmReschedule,
   onClose,
 }) => {
-  // Tomorrow as default date for reschedule
+  // Tomorrow as default date for reschedule (local time)
   const nextDate = new Date();
   nextDate.setDate(nextDate.getDate() + 1);
-  const nextDateIso = nextDate.toISOString().split('T')[0];
+  const nextDateIso = toLocalIsoDate(nextDate);
 
   const [targetDate, setTargetDate] = useState<string>(nextDateIso);
   const [targetInstructorId, setTargetInstructorId] = useState<string>(sourceSession.instructorId);
@@ -74,13 +78,20 @@ export const RemarcarHorarioModal: React.FC<RemarcarHorarioModalProps> = ({
     targetDayOfWeek
   );
 
-  // Helper to get capacity of a slot on the target date
+  // Helper to get capacity of a slot on the target date (considering projected enrollments)
   const getSlotInfo = (time: string) => {
-    const existing = sessions.find(
-      s => s.date === targetDate && s.time === time && s.instructorId === targetInstructorId
-    );
-    const count = existing?.students.length || 0;
-    const max = existing?.maxCapacity || 4;
+    const instObj = instructors.find(i => i.id === targetInstructorId) || instructors[0];
+    if (!instObj) return { count: 0, max: 4, isFull: false, free: 4 };
+    const projected = getProjectedSessionFor({
+      date: targetDate,
+      time,
+      instructor: instObj,
+      sessions,
+      students,
+      operatingConfig,
+    });
+    const count = projected.students.length;
+    const max = projected.maxCapacity || operatingConfig.defaultCapacity || 4;
     const isFull = count >= max;
     return { count, max, isFull, free: Math.max(0, max - count) };
   };

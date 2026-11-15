@@ -176,6 +176,7 @@ export interface AgendaClassSession {
   modalityName?: string;
   maxCapacity: number; // default: 4 alunos por horário com o mesmo professor
   students: ClassStudentSlot[]; // até 4 alunos
+  removedStudentIds?: string[]; // alunos removidos pontualmente apenas desta data
 }
 
 export interface DayScheduleHours {

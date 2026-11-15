@@ -31,6 +31,7 @@ import {
   getEffectiveScheduleForInstructor,
   DAY_NAME_TO_NUMBER
 } from '../../utils/scheduleSlots';
+import { toLocalIsoDate } from '../../utils/agendaProjection';
 
 interface AlunosViewProps {
   students: Student[];
@@ -245,7 +246,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
         monthlyFee: chosenMod?.price || 380.00,
         dueDay: getParsedDueDay(),
         paymentStatus,
-        startDate: existingEnr?.startDate || new Date().toISOString().split('T')[0]
+        startDate: existingEnr?.startDate || toLocalIsoDate(new Date())
       };
     }
 
@@ -287,7 +288,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
         consentMedicalCertificate,
         status,
         enrollment: enrollmentData,
-        createdAt: new Date().toISOString().split('T')[0]
+        createdAt: toLocalIsoDate(new Date())
       };
       onAddStudent(newStudent);
     }
@@ -1364,7 +1365,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         monthlyFee: chosenMod?.price || 380,
                         dueDay: getParsedDueDay(),
                         paymentStatus: 'em_dia',
-                        startDate: new Date().toISOString().split('T')[0]
+                        startDate: toLocalIsoDate(new Date())
                       }
                     };
 
