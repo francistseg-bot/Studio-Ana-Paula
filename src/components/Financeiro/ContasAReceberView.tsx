@@ -18,6 +18,8 @@ import {
   CreditCard
 } from 'lucide-react';
 import { Student, Instructor, PaymentMethod } from '../../types/studio';
+import { toLocalIsoDate } from '../../utils/agendaProjection';
+import { getEffectiveBillingStatus } from '../../utils/billingStatus';
 
 const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: React.ReactNode }[] = [
   { value: 'Pix', label: 'Pix', icon: <QrCode className="w-3.5 h-3.5" /> },
@@ -46,7 +48,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
   onUpdateFee,
   onDeleteEnrollment,
 }) => {
-  const [filterStatus, setFilterStatus] = useState<'todos' | 'em_dia' | 'atrasado'>('todos');
+  const [filterStatus, setFilterStatus] = useState<'todos' | 'em_dia' | 'a_vencer' | 'atrasado'>('todos');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modal para Baixa com Desconto e Data Efetiva
@@ -54,7 +56,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
   const [effectivePaidAmount, setEffectivePaidAmount] = useState<string>('');
   const [discountAmountInput, setDiscountAmountInput] = useState<string>('0.00');
   const [effectivePaymentDate, setEffectivePaymentDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
+    () => toLocalIsoDate(new Date())
   );
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('Pix');
 
@@ -74,11 +76,16 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
 
     if (!matchesSearch) return false;
 
+    const billing = getEffectiveBillingStatus(student.enrollment!, student.createdAt);
+
     if (filterStatus === 'em_dia') {
-      return student.enrollment?.paymentStatus === 'em_dia';
+      return billing.status === 'pago';
+    }
+    if (filterStatus === 'a_vencer') {
+      return billing.status === 'a_vencer';
     }
     if (filterStatus === 'atrasado') {
-      return student.enrollment?.paymentStatus === 'atrasado';
+      return billing.status === 'vencido';
     }
     return true;
   });
@@ -91,7 +98,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
 
   // 2. Recebido Efetivo: soma do valor efetivamente pago (com eventual desconto deduzido)
   const totalQuitadoEmDia = activeStudentsWithEnrollment
-    .filter(s => s.enrollment?.paymentStatus === 'em_dia')
+    .filter(s => getEffectiveBillingStatus(s.enrollment!, s.createdAt).status === 'pago')
     .reduce((acc, s) => {
       const paid = s.enrollment?.effectivePaidAmount !== undefined 
         ? s.enrollment.effectivePaidAmount 
@@ -101,7 +108,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
 
   // 3. Descontos Comerciais Totais Concedidos
   const totalDescontosConcedidos = activeStudentsWithEnrollment
-    .filter(s => s.enrollment?.paymentStatus === 'em_dia')
+    .filter(s => getEffectiveBillingStatus(s.enrollment!, s.createdAt).status === 'pago')
     .reduce((acc, s) => {
       const fee = s.enrollment?.monthlyFee || 0;
       const paid = s.enrollment?.effectivePaidAmount !== undefined 
@@ -110,9 +117,14 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
       return acc + Math.max(0, fee - paid);
     }, 0);
 
-  // 4. Pendente / Em Atraso: soma integral das mensalidades não quitadas
+  // 4. A Vencer (No Prazo: vencimento >= Hoje e ainda não pago)
+  const totalAVencer = activeStudentsWithEnrollment
+    .filter(s => getEffectiveBillingStatus(s.enrollment!, s.createdAt).status === 'a_vencer')
+    .reduce((acc, s) => acc + (s.enrollment?.monthlyFee || 0), 0);
+
+  // 5. Vencidos / Em Atraso: somente mensalidades não pagas cujo vencimento já passou de Hoje
   const totalEmAtraso = activeStudentsWithEnrollment
-    .filter(s => s.enrollment?.paymentStatus === 'atrasado')
+    .filter(s => getEffectiveBillingStatus(s.enrollment!, s.createdAt).status === 'vencido')
     .reduce((acc, s) => acc + (s.enrollment?.monthlyFee || 0), 0);
 
   const handleOpenBaixa = (student: Student) => {
@@ -125,7 +137,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
     const currentDiscount = Math.max(0, fee - currentPaid);
     setDiscountAmountInput(currentDiscount > 0 ? currentDiscount.toFixed(2) : '0.00');
     setEffectivePaymentDate(
-      student.enrollment?.paymentDate || new Date().toISOString().split('T')[0]
+      student.enrollment?.paymentDate || toLocalIsoDate(new Date())
     );
     setSelectedPaymentMethod(student.enrollment?.paymentMethod || 'Pix');
   };
@@ -172,7 +184,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
 
   const handleEstornarBaixa = () => {
     if (baixaModalStudent) {
-      if (confirm(`Deseja estornar o pagamento de ${baixaModalStudent.name} e marcar a mensalidade como Em Atraso / Pendente?`)) {
+      if (confirm(`Deseja estornar a baixa de ${baixaModalStudent.name}? O status voltará para A Vencer ou Vencido conforme a data de vencimento.`)) {
         onTogglePaid(baixaModalStudent.id);
         setBaixaModalStudent(null);
       }
@@ -219,7 +231,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
             <span className="text-sm font-extrabold font-mono text-zinc-900">R$ {totalPrevisto.toFixed(2)}</span>
           </div>
           <div className="px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900">
-            <span className="text-[10px] font-semibold uppercase tracking-wider block text-emerald-700">Recebido Efetivo (Em Dia)</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider block text-emerald-700">Recebido Efetivo (Pagos)</span>
             <span className="text-sm font-extrabold font-mono text-emerald-800">R$ {totalQuitadoEmDia.toFixed(2)}</span>
           </div>
           {totalDescontosConcedidos > 0 && (
@@ -228,8 +240,12 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
               <span className="text-sm font-extrabold font-mono text-amber-800">- R$ {totalDescontosConcedidos.toFixed(2)}</span>
             </div>
           )}
+          <div className="px-3.5 py-2 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-950">
+            <span className="text-[10px] font-semibold uppercase tracking-wider block text-amber-700">A Vencer (No Prazo)</span>
+            <span className="text-sm font-extrabold font-mono text-amber-800">R$ {totalAVencer.toFixed(2)}</span>
+          </div>
           <div className="px-3.5 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-900">
-            <span className="text-[10px] font-semibold uppercase tracking-wider block text-rose-700">Pendente / Em Atraso</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider block text-rose-700">Vencidos / Em Atraso</span>
             <span className="text-sm font-extrabold font-mono text-rose-700">R$ {totalEmAtraso.toFixed(2)}</span>
           </div>
         </div>
@@ -252,7 +268,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
             />
           </div>
 
-          <div className="flex items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-zinc-500 font-medium">Farol de Status:</span>
             <button
               onClick={() => setFilterStatus('todos')}
@@ -273,7 +289,18 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Em Dia</span>
+              <span>Pagos (Em Dia)</span>
+            </button>
+            <button
+              onClick={() => setFilterStatus('a_vencer')}
+              className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-colors ${
+                filterStatus === 'a_vencer'
+                  ? 'bg-amber-600 text-white font-semibold'
+                  : 'bg-white border border-amber-200 text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <span>A Vencer</span>
             </button>
             <button
               onClick={() => setFilterStatus('atrasado')}
@@ -315,21 +342,33 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
               ) : (
                 filteredStudents.map((student) => {
                   const enr = student.enrollment!;
-                  const isOverdue = enr.paymentStatus === 'atrasado';
+                  const billing = getEffectiveBillingStatus(enr, student.createdAt);
+                  const isPaid = billing.status === 'pago';
+                  const isUpcoming = billing.status === 'a_vencer';
+                  const isOverdue = billing.status === 'vencido';
+                  const formattedDueDate = billing.dueDateIso.split('-').reverse().join('/');
 
                   return (
                     <tr key={student.id} className="hover:bg-zinc-50/70 transition-colors">
                       
-                      {/* Farol Visual Solicitado (Verde / Vermelho) */}
+                      {/* Farol Visual Solicitado (Verde = Pago / Âmbar = A Vencer / Vermelho = Vencido) */}
                       <td className="p-3.5">
                         <div className="flex items-center gap-2">
                           <span
                             className={`w-3.5 h-3.5 rounded-full shrink-0 shadow-xs ring-2 ${
                               isOverdue
                                 ? 'bg-rose-500 ring-rose-200 animate-pulse'
+                                : isUpcoming
+                                ? 'bg-amber-400 ring-amber-200'
                                 : 'bg-emerald-500 ring-emerald-200'
                             }`}
-                            title={isOverdue ? 'Mensalidade em Atraso (Vermelho)' : 'Mensalidade em Dia (Verde)'}
+                            title={
+                              isOverdue
+                                ? 'Mensalidade Vencida / Em Atraso (Vermelho)'
+                                : isUpcoming
+                                ? 'Mensalidade A Vencer / No Prazo (Âmbar)'
+                                : 'Mensalidade Paga / Em Dia (Verde)'
+                            }
                           />
                         </div>
                       </td>
@@ -364,14 +403,14 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                         <span className="bg-zinc-100 px-2 py-1 rounded text-zinc-800 font-bold">
                           Todo dia {enr.dueDay}
                         </span>
-                        <span className="block text-[10px] text-zinc-400 mt-0.5">
-                          Recorrente mensal
+                        <span className="block text-[10px] text-zinc-500 mt-1">
+                          Venc.: {formattedDueDate}
                         </span>
                       </td>
 
                       {/* Valor da Mensalidade (Contratual vs Recebido Efetivo) */}
                       <td className="p-3.5 font-mono">
-                        {enr.paymentStatus === 'em_dia' && enr.effectivePaidAmount !== undefined && enr.effectivePaidAmount < enr.monthlyFee ? (
+                        {isPaid && enr.effectivePaidAmount !== undefined && enr.effectivePaidAmount < enr.monthlyFee ? (
                           <div>
                             <div className="font-extrabold text-sm text-emerald-800 flex items-center gap-1.5">
                               <span>R$ {enr.effectivePaidAmount.toFixed(2)}</span>
@@ -393,7 +432,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                               </div>
                             )}
                           </div>
-                        ) : enr.paymentStatus === 'em_dia' ? (
+                        ) : isPaid ? (
                           <div>
                             <div className="font-extrabold text-sm text-emerald-900 flex items-center gap-1.5">
                               <span>R$ {(enr.effectivePaidAmount ?? enr.monthlyFee).toFixed(2)}</span>
@@ -411,13 +450,24 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                               </span>
                             )}
                           </div>
+                        ) : isUpcoming ? (
+                          <div>
+                            <div className="font-bold text-sm text-zinc-900">
+                              R$ {enr.monthlyFee.toFixed(2)}
+                            </div>
+                            <span className="text-[10px] text-amber-700 font-sans font-medium">
+                              {billing.isDueToday
+                                ? 'Vence hoje (no prazo)'
+                                : `Vence em ${billing.daysUntilDue} dia(s)`}
+                            </span>
+                          </div>
                         ) : (
                           <div>
                             <div className="font-bold text-sm text-zinc-900">
                               R$ {enr.monthlyFee.toFixed(2)}
                             </div>
-                            <span className="text-[10px] text-rose-600 font-sans">
-                              Aguardando baixa
+                            <span className="text-[10px] text-rose-600 font-sans font-medium">
+                              Vencido há {billing.daysOverdue} dia(s)
                             </span>
                           </div>
                         )}
@@ -429,12 +479,19 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                           <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold inline-flex items-center gap-1 ${
                             isOverdue
                               ? 'bg-rose-100 text-rose-800'
+                              : isUpcoming
+                              ? 'bg-amber-100 text-amber-800'
                               : 'bg-emerald-100 text-emerald-800'
                           }`}>
                             {isOverdue ? (
                               <>
                                 <AlertCircle className="w-3.5 h-3.5" />
-                                <span>Em Atraso</span>
+                                <span>Vencido / Em Atraso</span>
+                              </>
+                            ) : isUpcoming ? (
+                              <>
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>{billing.isDueToday ? 'Vence Hoje' : 'A Vencer (No Prazo)'}</span>
                               </>
                             ) : (
                               <>
@@ -444,7 +501,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                             )}
                           </span>
 
-                          {!isOverdue && enr.paymentMethod && (
+                          {isPaid && enr.paymentMethod && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-teal-50 text-teal-800 border border-teal-200/80">
                               {enr.paymentMethod === 'Pix' && <QrCode className="w-3 h-3 text-teal-700" />}
                               {enr.paymentMethod === 'Dinheiro' && <Banknote className="w-3 h-3 text-teal-700" />}
@@ -463,14 +520,14 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                           <button
                             onClick={() => handleOpenBaixa(student)}
                             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 ${
-                              isOverdue
+                              !isPaid
                                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xs'
                                 : 'bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200/70'
                             }`}
-                            title={isOverdue ? 'Registrar Baixa / Pagamento' : 'Ver / Ajustar Baixa e Desconto'}
+                            title={!isPaid ? 'Registrar Baixa / Pagamento' : 'Ver / Ajustar Baixa e Desconto'}
                           >
                             <Check className="w-3.5 h-3.5" />
-                            <span>{isOverdue ? 'Dar Baixa' : 'Ajustar Baixa'}</span>
+                            <span>{!isPaid ? 'Dar Baixa' : 'Ajustar Baixa'}</span>
                           </button>
 
                           <button
@@ -525,7 +582,9 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
         const assignedInst = instructors.find(i => i.id === baixaModalStudent.enrollment?.instructorId);
         const commPct = assignedInst?.commissionPercentage || 30;
         const commVal = (fee * commPct) / 100;
-        const isCurrentlyPaid = baixaModalStudent.enrollment?.paymentStatus === 'em_dia';
+        const isCurrentlyPaid = baixaModalStudent.enrollment
+          ? getEffectiveBillingStatus(baixaModalStudent.enrollment, baixaModalStudent.createdAt).status === 'pago'
+          : false;
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
@@ -719,9 +778,9 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                     type="button"
                     onClick={handleEstornarBaixa}
                     className="px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-xl transition-colors"
-                    title="Estornar baixa e marcar mensalidade como Em Atraso"
+                    title="Estornar baixa e retornar para A Vencer ou Vencido conforme data de vencimento"
                   >
-                    Estornar (Voltar para Atrasado)
+                    Estornar Baixa
                   </button>
                 ) : (
                   <div />

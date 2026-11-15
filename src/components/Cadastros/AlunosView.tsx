@@ -32,6 +32,7 @@ import {
   DAY_NAME_TO_NUMBER
 } from '../../utils/scheduleSlots';
 import { toLocalIsoDate } from '../../utils/agendaProjection';
+import { getCycleDueDateIso, getEffectiveBillingStatus } from '../../utils/billingStatus';
 
 interface AlunosViewProps {
   students: Student[];
@@ -64,7 +65,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | 'ativo' | 'inativo'>(
     initialFilter?.status || 'all'
   );
-  const [paymentFilter, setPaymentFilter] = useState<'all' | 'em_dia' | 'atrasado'>(
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'em_dia' | 'pendente' | 'atrasado'>(
     initialFilter?.paymentStatus || 'all'
   );
 
@@ -100,7 +101,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
   const [instructorId, setInstructorId] = useState(instructors[0]?.id || '');
   const [dueDayInput, setDueDayInput] = useState<string>('10');
   const [startDate, setStartDate] = useState<string>(() => toLocalIsoDate(new Date()));
-  const [paymentStatus, setPaymentStatus] = useState<'em_dia' | 'atrasado'>('em_dia');
+  const [paymentStatus, setPaymentStatus] = useState<'em_dia' | 'pendente' | 'atrasado'>('pendente');
 
   // Modal para inclusão rápida de matrícula em aluno já existente
   const [matriculaModalStudent, setMatriculaModalStudent] = useState<Student | null>(null);
@@ -183,7 +184,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
     setInstructorId(defaultInstId);
     setDueDayInput('10');
     setStartDate(toLocalIsoDate(new Date()));
-    setPaymentStatus('em_dia');
+    setPaymentStatus('pendente');
     setEditingStudent(null);
   };
 
@@ -210,6 +211,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
     setConsentMedicalCertificate(student.consentMedicalCertificate ?? true);
 
     if (student.enrollment) {
+      const billing = getEffectiveBillingStatus(student.enrollment, student.createdAt);
       setIncludeEnrollment(true);
       setSelectedModalityId(student.enrollment.modalityId);
       setDaysPerWeek(student.enrollment.daysPerWeek);
@@ -218,10 +220,17 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
       setInstructorId(student.enrollment.instructorId);
       setDueDayInput((student.enrollment.dueDay || 10).toString());
       setStartDate(student.enrollment.startDate || student.createdAt || toLocalIsoDate(new Date()));
-      setPaymentStatus(student.enrollment.paymentStatus);
+      setPaymentStatus(
+        billing.status === 'pago'
+          ? 'em_dia'
+          : billing.status === 'a_vencer'
+          ? 'pendente'
+          : 'atrasado'
+      );
     } else {
       setIncludeEnrollment(false);
       setStartDate(student.createdAt || toLocalIsoDate(new Date()));
+      setPaymentStatus('pendente');
     }
 
     setIsAddStudentOpen(true);
@@ -237,6 +246,21 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
       const chosenMod = modalities.find(m => m.id === selectedModalityId);
       const chosenInst = instructors.find(i => i.id === instructorId) || instructors[0];
       const existingEnr = editingStudent?.enrollment;
+      const parsedDueDay = getParsedDueDay();
+      const effectiveStart = startDate || toLocalIsoDate(new Date());
+      const todayIso = toLocalIsoDate(new Date());
+      const dueDateIso = getCycleDueDateIso(parsedDueDay, effectiveStart);
+
+      // Se o vencimento for >= Hoje e não estiver pago, nunca salva como vencido/atrasado
+      const normalizedStatus: 'em_dia' | 'pendente' | 'atrasado' =
+        paymentStatus === 'em_dia'
+          ? 'em_dia'
+          : todayIso > dueDateIso
+          ? 'atrasado'
+          : 'pendente';
+
+      const monthlyFeeVal = chosenMod?.price || 380.00;
+      const isPaid = normalizedStatus === 'em_dia';
 
       enrollmentData = {
         ...(existingEnr || {}),
@@ -247,10 +271,14 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
         scheduleTime,
         instructorId: chosenInst?.id || '',
         instructorName: chosenInst?.name || 'A definir',
-        monthlyFee: chosenMod?.price || 380.00,
-        dueDay: getParsedDueDay(),
-        paymentStatus,
-        startDate: startDate || toLocalIsoDate(new Date())
+        monthlyFee: monthlyFeeVal,
+        dueDay: parsedDueDay,
+        paymentStatus: normalizedStatus,
+        startDate: effectiveStart,
+        paymentDate: isPaid ? (existingEnr?.paymentDate || todayIso) : undefined,
+        effectivePaidAmount: isPaid ? (existingEnr?.effectivePaidAmount ?? monthlyFeeVal) : undefined,
+        discountAmount: isPaid ? existingEnr?.discountAmount : undefined,
+        paymentMethod: isPaid ? existingEnr?.paymentMethod : undefined,
       };
     }
 
@@ -316,7 +344,14 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
 
     let matchesPayment = true;
     if (paymentFilter !== 'all') {
-      matchesPayment = s.enrollment?.paymentStatus === paymentFilter;
+      if (!s.enrollment) {
+        matchesPayment = false;
+      } else {
+        const billing = getEffectiveBillingStatus(s.enrollment, s.createdAt);
+        if (paymentFilter === 'em_dia') matchesPayment = billing.status === 'pago';
+        else if (paymentFilter === 'pendente') matchesPayment = billing.status === 'a_vencer';
+        else if (paymentFilter === 'atrasado') matchesPayment = billing.status === 'vencido';
+      }
     }
 
     return matchesSearch && matchesStatus && matchesPayment;
@@ -411,7 +446,15 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                 paymentFilter === 'em_dia' ? 'bg-white text-emerald-800 shadow-2xs font-bold' : 'text-zinc-600'
               }`}
             >
-              Em Dia
+              Pagos
+            </button>
+            <button
+              onClick={() => setPaymentFilter('pendente')}
+              className={`px-2.5 py-1 rounded-lg font-medium ${
+                paymentFilter === 'pendente' ? 'bg-white text-amber-800 shadow-2xs font-bold' : 'text-zinc-600'
+              }`}
+            >
+              A Vencer
             </button>
             <button
               onClick={() => setPaymentFilter('atrasado')}
@@ -450,7 +493,11 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                 </tr>
               ) : (
                 filteredStudents.map((student) => {
-                  const isOverdue = student.enrollment?.paymentStatus === 'atrasado';
+                  const billing = student.enrollment
+                    ? getEffectiveBillingStatus(student.enrollment, student.createdAt)
+                    : null;
+                  const isOverdue = billing?.status === 'vencido';
+                  const isUpcoming = billing?.status === 'a_vencer';
 
                   return (
                     <tr key={student.id} className="hover:bg-zinc-50/70 transition-colors">
@@ -576,9 +623,17 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         {student.enrollment ? (
                           <div>
                             <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                              isOverdue ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                              isOverdue
+                                ? 'bg-rose-100 text-rose-800'
+                                : isUpcoming
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-emerald-100 text-emerald-800'
                             }`}>
-                              {isOverdue ? 'Atrasada' : 'Em Dia'}
+                              {isOverdue
+                                ? 'Vencida'
+                                : isUpcoming
+                                ? `A Vencer (Dia ${student.enrollment.dueDay})`
+                                : 'Em Dia / Pago'}
                             </span>
                             <div className="text-[11px] font-mono text-zinc-600 mt-0.5">
                               R$ {student.enrollment.monthlyFee.toFixed(2)}
@@ -1097,16 +1152,41 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
 
                       <div>
                         <label className="text-zinc-700 font-semibold block mb-1">
-                          Status Inicial
+                          Status Financeiro Inicial
                         </label>
                         <select
                           value={paymentStatus}
-                          onChange={(e) => setPaymentStatus(e.target.value as any)}
+                          onChange={(e) => setPaymentStatus(e.target.value as 'em_dia' | 'pendente' | 'atrasado')}
                           className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 focus:outline-none focus:ring-1 focus:ring-teal-600 font-medium"
                         >
-                          <option value="em_dia">Em Dia (Pago)</option>
-                          <option value="atrasado">Em Atraso</option>
+                          <option value="pendente">A Vencer / Aguardando Pagamento</option>
+                          <option value="em_dia">Em Dia (Já Pago)</option>
+                          <option value="atrasado">Em Atraso / Vencido</option>
                         </select>
+                        {(() => {
+                          const previewDueIso = getCycleDueDateIso(getParsedDueDay(), startDate);
+                          const todayIso = toLocalIsoDate(new Date());
+                          const dueFormatted = previewDueIso.split('-').reverse().join('/');
+                          if (paymentStatus === 'em_dia') {
+                            return (
+                              <span className="text-[10px] text-emerald-700 block mt-1 leading-tight">
+                                Mensalidade será marcada como <strong>Paga</strong>.
+                              </span>
+                            );
+                          }
+                          if (todayIso > previewDueIso) {
+                            return (
+                              <span className="text-[10px] text-rose-700 block mt-1 leading-tight">
+                                Venc. {dueFormatted} já passou de Hoje — entrará como <strong>Vencido</strong> em 4.2 Contas a Receber.
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="text-[10px] text-amber-800 block mt-1 leading-tight">
+                              Venc. {dueFormatted} (&ge; Hoje) — ficará como <strong>A Vencer</strong> em 4.2 Contas a Receber até passar a data.
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -1390,6 +1470,11 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                     const chosenMod = modalities.find(m => m.id === selectedModalityId);
                     const chosenInst = instructors.find(i => i.id === instructorId) || instructors[0];
 
+                    const parsedDueDay = getParsedDueDay();
+                    const effectiveStart = startDate || toLocalIsoDate(new Date());
+                    const todayIso = toLocalIsoDate(new Date());
+                    const dueDateIso = getCycleDueDateIso(parsedDueDay, effectiveStart);
+
                     const updated: Student = {
                       ...matriculaModalStudent,
                       status: 'ativo',
@@ -1402,9 +1487,9 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         instructorId: chosenInst?.id || '',
                         instructorName: chosenInst?.name || 'A definir',
                         monthlyFee: chosenMod?.price || 380,
-                        dueDay: getParsedDueDay(),
-                        paymentStatus: 'em_dia',
-                        startDate: startDate || toLocalIsoDate(new Date())
+                        dueDay: parsedDueDay,
+                        paymentStatus: todayIso > dueDateIso ? 'atrasado' : 'pendente',
+                        startDate: effectiveStart
                       }
                     };
 

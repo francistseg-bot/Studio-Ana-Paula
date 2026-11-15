@@ -18,6 +18,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { Student } from '../../types/studio';
+import { getEffectiveBillingStatus } from '../../utils/billingStatus';
 
 interface StudentDetailViewProps {
   student: Student;
@@ -34,7 +35,12 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
   onToggleStudentStatus,
   onEmitContract,
 }) => {
-  const isOverdue = student.enrollment?.paymentStatus === 'atrasado';
+  const billing = student.enrollment
+    ? getEffectiveBillingStatus(student.enrollment, student.createdAt)
+    : null;
+  const isPaid = billing?.status === 'pago';
+  const isUpcoming = billing?.status === 'a_vencer';
+  const isOverdue = billing?.status === 'vencido';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
@@ -231,9 +237,17 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
 
               <div className="text-right">
                 <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                  isOverdue ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                  isOverdue
+                    ? 'bg-rose-100 text-rose-800'
+                    : isUpcoming
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-emerald-100 text-emerald-800'
                 }`}>
-                  {isOverdue ? 'Mensalidade Atrasada' : 'Mensalidade Em Dia'}
+                  {isOverdue
+                    ? 'Mensalidade Vencida / Em Atraso'
+                    : isUpcoming
+                    ? `A Vencer (Dia ${student.enrollment.dueDay})`
+                    : 'Mensalidade Em Dia / Paga'}
                 </span>
               </div>
             </div>
@@ -256,12 +270,12 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
                 <strong className="font-mono font-bold text-teal-900">
                   R$ {student.enrollment.monthlyFee.toFixed(2)} (Venc. todo dia {student.enrollment.dueDay})
                 </strong>
-                {student.enrollment.paymentStatus === 'em_dia' && student.enrollment.effectivePaidAmount !== undefined && student.enrollment.effectivePaidAmount < student.enrollment.monthlyFee && (
+                {isPaid && student.enrollment.effectivePaidAmount !== undefined && student.enrollment.effectivePaidAmount < student.enrollment.monthlyFee && (
                   <span className="block text-[10px] text-emerald-800 font-semibold mt-0.5">
                     Quitado com desconto: R$ {student.enrollment.effectivePaidAmount.toFixed(2)} (-R$ {(student.enrollment.monthlyFee - student.enrollment.effectivePaidAmount).toFixed(2)})
                   </span>
                 )}
-                {student.enrollment.paymentStatus === 'em_dia' && student.enrollment.paymentMethod && (
+                {isPaid && student.enrollment.paymentMethod && (
                   <span className="inline-block text-[10px] text-teal-800 bg-white border border-teal-200 px-1.5 py-0.5 rounded font-semibold mt-1">
                     Forma de pgto: {student.enrollment.paymentMethod}
                   </span>
@@ -277,12 +291,12 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
               <button
                 onClick={() => onTogglePaymentStatus(student.id)}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                  isOverdue
+                  !isPaid
                     ? 'bg-emerald-700 hover:bg-emerald-600 text-white'
                     : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800'
                 }`}
               >
-                {isOverdue ? 'Dar Baixa / Marcar Em Dia' : 'Marcar como Atrasado'}
+                {!isPaid ? 'Dar Baixa / Marcar Pago' : 'Estornar Baixa'}
               </button>
             </div>
           </div>

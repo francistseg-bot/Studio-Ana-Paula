@@ -15,6 +15,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { Student, MainNavigation } from '../types/studio';
+import { getEffectiveBillingStatus } from '../utils/billingStatus';
 
 interface DashboardOverviewProps {
   students: Student[];
@@ -45,11 +46,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const inactiveStudents = students.filter(s => s.status === 'inativo');
 
   const upToDateStudents = students.filter(
-    s => s.status === 'ativo' && s.enrollment && s.enrollment.paymentStatus === 'em_dia'
+    s => s.status === 'ativo' && s.enrollment && getEffectiveBillingStatus(s.enrollment, s.createdAt).status === 'pago'
   );
 
   const overdueStudents = students.filter(
-    s => s.status === 'ativo' && s.enrollment && s.enrollment.paymentStatus === 'atrasado'
+    s => s.status === 'ativo' && s.enrollment && getEffectiveBillingStatus(s.enrollment, s.createdAt).status === 'vencido'
   );
 
   const totalOverdueAmount = overdueStudents.reduce(
@@ -283,7 +284,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
           <div className="space-y-3">
             {students.slice(0, 5).map((student) => {
-              const isOverdue = student.enrollment?.paymentStatus === 'atrasado';
+              const billing = student.enrollment
+                ? getEffectiveBillingStatus(student.enrollment, student.createdAt)
+                : null;
+              const isOverdue = billing?.status === 'vencido';
+              const isUpcoming = billing?.status === 'a_vencer';
 
               return (
                 <div
@@ -321,9 +326,13 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                     {student.enrollment ? (
                       <span className={`text-[11px] font-mono font-semibold px-2.5 py-1 rounded-lg ${
-                        isOverdue ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                        isOverdue
+                          ? 'bg-rose-100 text-rose-800'
+                          : isUpcoming
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-emerald-100 text-emerald-800'
                       }`}>
-                        {isOverdue ? 'Atrasado' : 'Em Dia'} · R$ {student.enrollment.monthlyFee.toFixed(2)}
+                        {isOverdue ? 'Vencido' : isUpcoming ? `A Vencer (Dia ${student.enrollment.dueDay})` : 'Pago'} · R$ {student.enrollment.monthlyFee.toFixed(2)}
                       </span>
                     ) : (
                       <span className="text-[11px] text-zinc-400 italic">

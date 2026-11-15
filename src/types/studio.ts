@@ -37,8 +37,8 @@ export interface Enrollment {
   instructorId: string;
   instructorName: string;
   monthlyFee: number;
-  dueDay: number; // 5, 10, 15, 20
-  paymentStatus: 'em_dia' | 'atrasado';
+  dueDay: number; // 1 a 31
+  paymentStatus: 'em_dia' | 'pendente' | 'atrasado';
   startDate: string;
   effectivePaidAmount?: number; // Valor efetivamente recebido após eventual desconto
   paymentDate?: string;         // Data efetiva da baixa do pagamento

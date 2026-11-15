@@ -54,6 +54,7 @@ import {
   setStudioData
 } from './data/studioData';
 import { toLocalIsoDate } from './utils/agendaProjection';
+import { getCycleDueDateIso, getEffectiveBillingStatus } from './utils/billingStatus';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainNavigation>('dashboard');
@@ -521,12 +522,14 @@ export default function App() {
     paymentDate?: string,
     paymentMethod?: PaymentMethod
   ) => {
+    const todayIso = toLocalIsoDate(new Date());
     let studentToSave: Student | null = null;
     setStudents((prev) =>
       prev.map((s) => {
         if (s.id === studentId && s.enrollment) {
-          const isCurrentlyPaid = s.enrollment.paymentStatus === 'em_dia';
-          let nextStatus: 'em_dia' | 'atrasado' = 'em_dia';
+          const billing = getEffectiveBillingStatus(s.enrollment, s.createdAt);
+          const isCurrentlyPaid = billing.status === 'pago';
+          let nextStatus: 'em_dia' | 'pendente' | 'atrasado' = 'em_dia';
           let finalPaidAmount: number | undefined = undefined;
           let finalPaymentDate: string | undefined = undefined;
           let discount: number | undefined = undefined;
@@ -536,23 +539,24 @@ export default function App() {
             // Efetivação explícita de baixa (com ou sem desconto)
             nextStatus = 'em_dia';
             finalPaidAmount = paidAmount;
-            finalPaymentDate = paymentDate || new Date().toISOString().split('T')[0];
+            finalPaymentDate = paymentDate || todayIso;
             discount = Math.max(0, s.enrollment.monthlyFee - paidAmount);
             finalPaymentMethod = paymentMethod || s.enrollment.paymentMethod || 'Pix';
           } else {
             // Alternância manual simples de status
-            nextStatus = isCurrentlyPaid ? 'atrasado' : 'em_dia';
-            if (nextStatus === 'em_dia') {
-              finalPaidAmount = s.enrollment.effectivePaidAmount ?? s.enrollment.monthlyFee;
-              finalPaymentDate = s.enrollment.paymentDate || new Date().toISOString().split('T')[0];
-              discount = Math.max(0, s.enrollment.monthlyFee - finalPaidAmount);
-              finalPaymentMethod = paymentMethod || s.enrollment.paymentMethod;
-            } else {
-              // Estornado para em atraso
+            if (isCurrentlyPaid) {
+              // Estornado: volta para atrasado apenas se já passou do vencimento; senão fica pendente (A Vencer)
+              nextStatus = todayIso > billing.dueDateIso ? 'atrasado' : 'pendente';
               finalPaidAmount = undefined;
               finalPaymentDate = undefined;
               discount = undefined;
               finalPaymentMethod = undefined;
+            } else {
+              nextStatus = 'em_dia';
+              finalPaidAmount = s.enrollment.effectivePaidAmount ?? s.enrollment.monthlyFee;
+              finalPaymentDate = todayIso;
+              discount = Math.max(0, s.enrollment.monthlyFee - finalPaidAmount);
+              finalPaymentMethod = paymentMethod || s.enrollment.paymentMethod;
             }
           }
 
@@ -579,8 +583,9 @@ export default function App() {
     }
 
     if (selectedStudent && selectedStudent.id === studentId && selectedStudent.enrollment) {
-      const isCurrentlyPaid = selectedStudent.enrollment.paymentStatus === 'em_dia';
-      let nextStatus: 'em_dia' | 'atrasado' = 'em_dia';
+      const billing = getEffectiveBillingStatus(selectedStudent.enrollment, selectedStudent.createdAt);
+      const isCurrentlyPaid = billing.status === 'pago';
+      let nextStatus: 'em_dia' | 'pendente' | 'atrasado' = 'em_dia';
       let finalPaidAmount: number | undefined = undefined;
       let finalPaymentDate: string | undefined = undefined;
       let discount: number | undefined = undefined;
@@ -589,17 +594,17 @@ export default function App() {
       if (paidAmount !== undefined) {
         nextStatus = 'em_dia';
         finalPaidAmount = paidAmount;
-        finalPaymentDate = paymentDate || new Date().toISOString().split('T')[0];
+        finalPaymentDate = paymentDate || todayIso;
         discount = Math.max(0, selectedStudent.enrollment.monthlyFee - paidAmount);
         finalPaymentMethod = paymentMethod || selectedStudent.enrollment.paymentMethod || 'Pix';
+      } else if (isCurrentlyPaid) {
+        nextStatus = todayIso > billing.dueDateIso ? 'atrasado' : 'pendente';
       } else {
-        nextStatus = isCurrentlyPaid ? 'atrasado' : 'em_dia';
-        if (nextStatus === 'em_dia') {
-          finalPaidAmount = selectedStudent.enrollment.effectivePaidAmount ?? selectedStudent.enrollment.monthlyFee;
-          finalPaymentDate = selectedStudent.enrollment.paymentDate || new Date().toISOString().split('T')[0];
-          discount = Math.max(0, selectedStudent.enrollment.monthlyFee - finalPaidAmount);
-          finalPaymentMethod = paymentMethod || selectedStudent.enrollment.paymentMethod;
-        }
+        nextStatus = 'em_dia';
+        finalPaidAmount = selectedStudent.enrollment.effectivePaidAmount ?? selectedStudent.enrollment.monthlyFee;
+        finalPaymentDate = todayIso;
+        discount = Math.max(0, selectedStudent.enrollment.monthlyFee - finalPaidAmount);
+        finalPaymentMethod = paymentMethod || selectedStudent.enrollment.paymentMethod;
       }
 
       setSelectedStudent({
@@ -1034,14 +1039,25 @@ export default function App() {
                 handleTogglePaymentStatus(studentId, paidAmount, paymentDate, paymentMethod)
               }
               onUpdateFee={(studentId, newFee, dueDay) => {
+                const todayIso = toLocalIsoDate(new Date());
                 setStudents(prev => prev.map(s => {
                   if (s.id === studentId && s.enrollment) {
-                    const updated = {
+                    const billing = getEffectiveBillingStatus(s.enrollment, s.createdAt);
+                    const newDueDateIso = getCycleDueDateIso(dueDay, s.enrollment.startDate || s.createdAt);
+                    const updatedPaymentStatus =
+                      billing.status === 'pago'
+                        ? 'em_dia'
+                        : todayIso > newDueDateIso
+                        ? 'atrasado'
+                        : 'pendente';
+
+                    const updated: Student = {
                       ...s,
                       enrollment: {
                         ...s.enrollment,
                         monthlyFee: newFee,
-                        dueDay: dueDay
+                        dueDay: dueDay,
+                        paymentStatus: updatedPaymentStatus,
                       }
                     };
                     saveDocument('students', updated);

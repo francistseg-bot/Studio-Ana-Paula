@@ -32,6 +32,7 @@ import {
 import { FecharComissaoModal } from './FecharComissaoModal';
 import { EditarComissaoAlunosModal } from './EditarComissaoAlunosModal';
 import { calculateInstructorCommission } from '../../utils/commissionCalculator';
+import { getEffectiveBillingStatus } from '../../utils/billingStatus';
 
 interface DREViewProps {
   students: Student[];
@@ -98,7 +99,9 @@ export const DREView: React.FC<DREViewProps> = ({
   );
 
   // 2. Faturamento Recebido (Em Dia / Pago) - CONSIDERANDO DESCONTOS EFETIVOS
-  const alunosRecebidos = activeStudents.filter(s => s.enrollment?.paymentStatus === 'em_dia');
+  const alunosRecebidos = activeStudents.filter(
+    s => getEffectiveBillingStatus(s.enrollment!, s.createdAt).status === 'pago'
+  );
   const totalRecebidos = alunosRecebidos.reduce((acc, s) => {
     const paid = s.enrollment?.effectivePaidAmount !== undefined
       ? s.enrollment.effectivePaidAmount
@@ -113,8 +116,10 @@ export const DREView: React.FC<DREViewProps> = ({
     return acc + Math.max(0, fee - paid);
   }, 0);
 
-  // 3. Ainda Pendentes (Em atraso)
-  const alunosPendentes = activeStudents.filter(s => s.enrollment?.paymentStatus === 'atrasado');
+  // 3. Ainda Pendentes (A Vencer + Vencidos)
+  const alunosPendentes = activeStudents.filter(
+    s => getEffectiveBillingStatus(s.enrollment!, s.createdAt).status !== 'pago'
+  );
   const totalPendentes = alunosPendentes.reduce(
     (acc, s) => acc + (s.enrollment?.monthlyFee || 0), 0
   );
@@ -724,26 +729,37 @@ export const DREView: React.FC<DREViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {(activeDrillDown === 'pendentes' ? alunosPendentes : activeStudents).map(st => (
-                    <tr key={st.id} className="hover:bg-zinc-50/50">
-                      <td className="p-2.5 font-bold text-zinc-900">{st.name}</td>
-                      <td className="p-2.5 text-zinc-600">{st.enrollment?.modalityName}</td>
-                      <td className="p-2.5">{st.enrollment?.instructorName}</td>
-                      <td className="p-2.5 font-mono">Dia {st.enrollment?.dueDay}</td>
-                      <td className="p-2.5">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                          st.enrollment?.paymentStatus === 'atrasado'
-                            ? 'bg-rose-100 text-rose-800'
-                            : 'bg-emerald-100 text-emerald-800'
-                        }`}>
-                          {st.enrollment?.paymentStatus === 'atrasado' ? 'Pendente' : 'Recebido'}
-                        </span>
-                      </td>
-                      <td className="p-2.5 font-mono font-bold text-zinc-900">
-                        R$ {st.enrollment?.monthlyFee.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
+                  {(activeDrillDown === 'pendentes' ? alunosPendentes : activeStudents).map(st => {
+                    const billing = st.enrollment
+                      ? getEffectiveBillingStatus(st.enrollment, st.createdAt)
+                      : null;
+                    return (
+                      <tr key={st.id} className="hover:bg-zinc-50/50">
+                        <td className="p-2.5 font-bold text-zinc-900">{st.name}</td>
+                        <td className="p-2.5 text-zinc-600">{st.enrollment?.modalityName}</td>
+                        <td className="p-2.5">{st.enrollment?.instructorName}</td>
+                        <td className="p-2.5 font-mono">Dia {st.enrollment?.dueDay}</td>
+                        <td className="p-2.5">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                            billing?.status === 'vencido'
+                              ? 'bg-rose-100 text-rose-800'
+                              : billing?.status === 'a_vencer'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {billing?.status === 'vencido'
+                              ? 'Vencido / Atrasado'
+                              : billing?.status === 'a_vencer'
+                              ? 'A Vencer (No Prazo)'
+                              : 'Recebido'}
+                          </span>
+                        </td>
+                        <td className="p-2.5 font-mono font-bold text-zinc-900">
+                          R$ {st.enrollment?.monthlyFee.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
