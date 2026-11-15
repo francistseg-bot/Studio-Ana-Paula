@@ -61,7 +61,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
   // Modal para Edição da Mensalidade
   const [editModalStudent, setEditModalStudent] = useState<Student | null>(null);
   const [editFee, setEditFee] = useState<string>('');
-  const [editDueDay, setEditDueDay] = useState<number>(5);
+  const [editDueDay, setEditDueDay] = useState<string>('10');
 
   const activeStudentsWithEnrollment = students.filter(
     (s) => s.status === 'ativo' && s.enrollment
@@ -182,13 +182,15 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
   const handleOpenEdit = (student: Student) => {
     setEditModalStudent(student);
     setEditFee((student.enrollment?.monthlyFee || 0).toString());
-    setEditDueDay(student.enrollment?.dueDay || 5);
+    setEditDueDay((student.enrollment?.dueDay || 10).toString());
   };
 
   const handleSaveEdit = () => {
     if (editModalStudent && onUpdateFee) {
       const fee = parseFloat(editFee) || editModalStudent.enrollment?.monthlyFee || 0;
-      onUpdateFee(editModalStudent.id, fee, editDueDay);
+      const parsedDay = parseInt(editDueDay, 10);
+      const safeDay = !isNaN(parsedDay) ? Math.min(31, Math.max(1, parsedDay)) : (editModalStudent.enrollment?.dueDay || 10);
+      onUpdateFee(editModalStudent.id, fee, safeDay);
       setEditModalStudent(null);
     }
   };
@@ -778,18 +780,26 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-zinc-700">Dia de Vencimento</label>
-                <select
-                  value={editDueDay}
-                  onChange={(e) => setEditDueDay(parseInt(e.target.value))}
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-xs"
-                >
-                  <option value={5}>Dia 05</option>
-                  <option value={10}>Dia 10</option>
-                  <option value={15}>Dia 15</option>
-                  <option value={20}>Dia 20</option>
-                  <option value={25}>Dia 25</option>
-                </select>
+                <label className="font-semibold text-zinc-700">Dia de Vencimento (1 a 31)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={editDueDay}
+                    onChange={(e) => setEditDueDay(e.target.value)}
+                    onBlur={() => {
+                      const parsed = parseInt(editDueDay, 10);
+                      if (isNaN(parsed) || parsed < 1) setEditDueDay('1');
+                      else if (parsed > 31) setEditDueDay('31');
+                    }}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-xs font-mono font-bold focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
+                    placeholder="Ex: 10"
+                  />
+                </div>
+                <p className="text-[10px] text-zinc-400">
+                  Informe manualmente qualquer dia do mês (1 a 31).
+                </p>
               </div>
             </div>
 

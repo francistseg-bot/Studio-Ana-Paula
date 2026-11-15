@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   UserPlus, 
@@ -21,16 +21,23 @@ import {
   MapPin,
   Mail,
   Upload,
-  Trash2
+  Trash2,
+  Clock
 } from 'lucide-react';
-import { Student, Modality, Instructor, Enrollment, CompanyData } from '../../types/studio';
+import { Student, Modality, Instructor, Enrollment, CompanyData, StudioOperatingConfig } from '../../types/studio';
 import { ContratoModal } from '../Modals/ContratoModal';
+import {
+  getAvailableSlotsForEnrollment,
+  getEffectiveScheduleForInstructor,
+  DAY_NAME_TO_NUMBER
+} from '../../utils/scheduleSlots';
 
 interface AlunosViewProps {
   students: Student[];
   modalities: Modality[];
   instructors: Instructor[];
   companyData: CompanyData;
+  operatingConfig: StudioOperatingConfig;
   initialFilter?: { status?: 'ativo' | 'inativo'; paymentStatus?: 'em_dia' | 'atrasado' };
   onAddStudent: (student: Student) => void;
   onUpdateStudent: (student: Student) => void;
@@ -44,6 +51,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
   modalities,
   instructors,
   companyData,
+  operatingConfig,
   initialFilter,
   onAddStudent,
   onUpdateStudent,
@@ -89,11 +97,43 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
   const [selectedDays, setSelectedDays] = useState<string[]>(['Terça', 'Quinta']);
   const [scheduleTime, setScheduleTime] = useState('08:00');
   const [instructorId, setInstructorId] = useState(instructors[0]?.id || '');
-  const [dueDay, setDueDay] = useState(10);
+  const [dueDayInput, setDueDayInput] = useState<string>('10');
   const [paymentStatus, setPaymentStatus] = useState<'em_dia' | 'atrasado'>('em_dia');
 
   // Modal para inclusão rápida de matrícula em aluno já existente
   const [matriculaModalStudent, setMatriculaModalStudent] = useState<Student | null>(null);
+
+  // Horários disponíveis sincronizados com 3. Agenda (operatingConfig)
+  const effectiveInstructorSchedule = getEffectiveScheduleForInstructor(
+    operatingConfig,
+    instructorId || instructors[0]?.id
+  );
+  const scheduleInfo = getAvailableSlotsForEnrollment(
+    operatingConfig,
+    instructorId || instructors[0]?.id,
+    selectedDays
+  );
+
+  const sundayEnabled = effectiveInstructorSchedule.find(d => d.dayOfWeek === 0)?.enabled;
+  const availableWeekDays = sundayEnabled
+    ? ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+    : ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+  // Mantém o horário selecionado compatível com as janelas configuradas em 3. Agenda
+  useEffect(() => {
+    if (scheduleInfo.slots.length > 0 && !scheduleInfo.slots.includes(scheduleTime)) {
+      const isEditingLegacySlot = editingStudent?.enrollment?.scheduleTime === scheduleTime;
+      if (!isEditingLegacySlot) {
+        setScheduleTime(scheduleInfo.slots[0]);
+      }
+    }
+  }, [instructorId, selectedDays, operatingConfig, scheduleInfo.slots.join(',')]);
+
+  const getParsedDueDay = () => {
+    const parsed = parseInt(dueDayInput, 10);
+    if (isNaN(parsed)) return 10;
+    return Math.min(31, Math.max(1, parsed));
+  };
 
   const toggleDay = (day: string) => {
     if (selectedDays.includes(day)) {
@@ -115,6 +155,10 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
   };
 
   const resetForm = () => {
+    const defaultInstId = instructors[0]?.id || '';
+    const defaultDays = ['Terça', 'Quinta'];
+    const defaultSchedule = getAvailableSlotsForEnrollment(operatingConfig, defaultInstId, defaultDays);
+
     setName('');
     setBirthDate('1990-01-01');
     setCpf('');
@@ -132,10 +176,10 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
     setIncludeEnrollment(true);
     setSelectedModalityId(modalities[0]?.id || '');
     setDaysPerWeek(2);
-    setSelectedDays(['Terça', 'Quinta']);
-    setScheduleTime('08:00');
-    setInstructorId(instructors[0]?.id || '');
-    setDueDay(10);
+    setSelectedDays(defaultDays);
+    setScheduleTime(defaultSchedule.slots[0] || '08:00');
+    setInstructorId(defaultInstId);
+    setDueDayInput('10');
     setPaymentStatus('em_dia');
     setEditingStudent(null);
   };
@@ -169,7 +213,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
       setSelectedDays(student.enrollment.scheduleDays);
       setScheduleTime(student.enrollment.scheduleTime);
       setInstructorId(student.enrollment.instructorId);
-      setDueDay(student.enrollment.dueDay);
+      setDueDayInput((student.enrollment.dueDay || 10).toString());
       setPaymentStatus(student.enrollment.paymentStatus);
     } else {
       setIncludeEnrollment(false);
@@ -187,19 +231,21 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
     if (includeEnrollment && selectedModalityId) {
       const chosenMod = modalities.find(m => m.id === selectedModalityId);
       const chosenInst = instructors.find(i => i.id === instructorId) || instructors[0];
+      const existingEnr = editingStudent?.enrollment;
 
       enrollmentData = {
+        ...(existingEnr || {}),
         modalityId: chosenMod?.id || 'mod-1',
         modalityName: chosenMod?.name || 'Pilates em Aparelhos',
         daysPerWeek: chosenMod?.daysPerWeek || daysPerWeek,
         scheduleDays: selectedDays,
         scheduleTime,
-        instructorId: chosenInst.id,
-        instructorName: chosenInst.name,
+        instructorId: chosenInst?.id || '',
+        instructorName: chosenInst?.name || 'A definir',
         monthlyFee: chosenMod?.price || 380.00,
-        dueDay,
+        dueDay: getParsedDueDay(),
         paymentStatus,
-        startDate: new Date().toISOString().split('T')[0]
+        startDate: existingEnr?.startDate || new Date().toISOString().split('T')[0]
       };
     }
 
@@ -487,8 +533,15 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         ) : (
                           <button
                             onClick={() => {
+                              const defaultDays = ['Segunda', 'Quarta'];
+                              const defaultInstId = instructors[0]?.id || '';
+                              const info = getAvailableSlotsForEnrollment(operatingConfig, defaultInstId, defaultDays);
                               setMatriculaModalStudent(student);
                               setSelectedModalityId(modalities[0]?.id || '');
+                              setInstructorId(defaultInstId);
+                              setSelectedDays(defaultDays);
+                              setScheduleTime(info.slots[0] || '08:00');
+                              setDueDayInput('10');
                             }}
                             className="text-xs text-teal-700 font-semibold hover:underline flex items-center gap-1"
                           >
@@ -920,17 +973,28 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                       <label className="text-zinc-700 font-semibold block mb-1">
                         Dias na Semana Escolhidos ({selectedDays.length} selecionados)
                       </label>
-                      <div className="grid grid-cols-6 gap-1.5">
-                        {['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'].map((day) => {
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                        {availableWeekDays.map((day) => {
                           const isSelected = selectedDays.includes(day);
+                          const dayNum = DAY_NAME_TO_NUMBER[day];
+                          const dayCfg = effectiveInstructorSchedule.find(d => d.dayOfWeek === dayNum);
+                          const isDayOpen = dayCfg?.enabled ?? true;
                           return (
                             <button
                               key={day}
                               type="button"
+                              disabled={!isDayOpen && !isSelected}
                               onClick={() => toggleDay(day)}
+                              title={
+                                isDayOpen && dayCfg
+                                  ? `${day}: ${dayCfg.startTime} às ${dayCfg.endTime}`
+                                  : `${day}: Fechado em 3. Agenda`
+                              }
                               className={`py-1.5 text-center rounded-lg border font-medium text-[11px] transition-colors ${
                                 isSelected
                                   ? 'bg-teal-700 text-white border-teal-700 font-bold'
+                                  : !isDayOpen
+                                  ? 'bg-zinc-100 border-zinc-200 text-zinc-400 cursor-not-allowed line-through'
                                   : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
                               }`}
                             >
@@ -939,6 +1003,11 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                           );
                         })}
                       </div>
+                      {scheduleInfo.disabledSelectedDays.length > 0 && (
+                        <p className="text-[10px] text-amber-700 font-medium mt-1">
+                          Atenção: {scheduleInfo.disabledSelectedDays.join(', ')} está desabilitado(a) em 3. Agenda para este atendimento.
+                        </p>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -949,28 +1018,54 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         <select
                           value={scheduleTime}
                           onChange={(e) => setScheduleTime(e.target.value)}
+                          disabled={scheduleInfo.slots.length === 0 && !scheduleTime}
                           className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono focus:outline-none focus:ring-1 focus:ring-teal-600"
                         >
-                          {['07:00', '08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'].map(t => (
-                            <option key={t} value={t}>{t}</option>
-                          ))}
+                          {scheduleInfo.slots.length === 0 ? (
+                            <option value={scheduleTime || ''}>
+                              {scheduleTime ? `${scheduleTime} (sem grade ativa)` : 'Sem horários em 3. Agenda'}
+                            </option>
+                          ) : (
+                            <>
+                              {scheduleTime && !scheduleInfo.slots.includes(scheduleTime) && (
+                                <option value={scheduleTime}>
+                                  {scheduleTime} (fora da grade atual)
+                                </option>
+                              )}
+                              {scheduleInfo.slots.map(t => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </>
+                          )}
                         </select>
+                        <span className="text-[10px] text-teal-800 block mt-1 leading-tight">
+                          {scheduleInfo.isInstructorCustom ? 'Grade do professor: ' : 'Grade 3. Agenda: '}
+                          {scheduleInfo.windowSummary}
+                        </span>
                       </div>
 
                       <div>
                         <label className="text-zinc-700 font-semibold block mb-1">
-                          Dia de Vencimento
+                          Dia de Vencimento *
                         </label>
-                        <select
-                          value={dueDay}
-                          onChange={(e) => setDueDay(Number(e.target.value))}
-                          className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono focus:outline-none focus:ring-1 focus:ring-teal-600"
-                        >
-                          <option value={5}>Todo dia 05</option>
-                          <option value={10}>Todo dia 10</option>
-                          <option value={15}>Todo dia 15</option>
-                          <option value={20}>Todo dia 20</option>
-                        </select>
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          required
+                          value={dueDayInput}
+                          onChange={(e) => setDueDayInput(e.target.value)}
+                          onBlur={() => {
+                            const parsed = parseInt(dueDayInput, 10);
+                            if (isNaN(parsed) || parsed < 1) setDueDayInput('1');
+                            else if (parsed > 31) setDueDayInput('31');
+                          }}
+                          placeholder="Ex: 10"
+                          className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-teal-600"
+                        />
+                        <span className="text-[10px] text-zinc-500 block mt-1">
+                          Edição manual livre (dia 1 a 31)
+                        </span>
                       </div>
 
                       <div>
@@ -1134,13 +1229,13 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
 
       {/* MODAL: Vincular Matrícula em Aluno Existente */}
       {matriculaModalStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-md w-full p-6 text-xs animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-md w-full p-6 text-xs animate-in fade-in zoom-in-95 duration-150 my-auto">
             <h3 className="text-base font-bold text-zinc-900 mb-1">
               Vincular Matrícula para {matriculaModalStudent.name}
             </h3>
             <p className="text-zinc-500 mb-4">
-              Selecione a modalidade, quantidade de dias e o professor
+              Selecione a modalidade, dias, horário de 3. Agenda e dia de vencimento
             </p>
 
             <div className="space-y-3">
@@ -1172,30 +1267,74 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                 </select>
               </div>
 
+              <div>
+                <label className="text-zinc-700 font-semibold block mb-1">
+                  Dias na Semana ({selectedDays.length} selecionados)
+                </label>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                  {availableWeekDays.map((day) => {
+                    const isSelected = selectedDays.includes(day);
+                    const dayNum = DAY_NAME_TO_NUMBER[day];
+                    const dayCfg = effectiveInstructorSchedule.find(d => d.dayOfWeek === dayNum);
+                    const isDayOpen = dayCfg?.enabled ?? true;
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        disabled={!isDayOpen && !isSelected}
+                        onClick={() => toggleDay(day)}
+                        className={`py-1.5 text-center rounded-lg border font-medium text-[11px] transition-colors ${
+                          isSelected
+                            ? 'bg-teal-700 text-white border-teal-700 font-bold'
+                            : !isDayOpen
+                            ? 'bg-zinc-100 border-zinc-200 text-zinc-400 cursor-not-allowed line-through'
+                            : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
+                        }`}
+                      >
+                        {day.slice(0, 3)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-zinc-700 font-semibold block mb-1">Horário</label>
+                  <label className="text-zinc-700 font-semibold block mb-1">Horário (3. Agenda)</label>
                   <select
                     value={scheduleTime}
                     onChange={(e) => setScheduleTime(e.target.value)}
+                    disabled={scheduleInfo.slots.length === 0}
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono"
                   >
-                    {['08:00', '09:00', '10:00', '14:00', '16:00', '17:00', '18:00'].map(t => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
+                    {scheduleInfo.slots.length === 0 ? (
+                      <option value="">Sem horários ativos</option>
+                    ) : (
+                      scheduleInfo.slots.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))
+                    )}
                   </select>
+                  <span className="text-[10px] text-teal-800 block mt-0.5 leading-tight">
+                    {scheduleInfo.windowSummary}
+                  </span>
                 </div>
                 <div>
-                  <label className="text-zinc-700 font-semibold block mb-1">Vencimento</label>
-                  <select
-                    value={dueDay}
-                    onChange={(e) => setDueDay(Number(e.target.value))}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono"
-                  >
-                    <option value={5}>Dia 05</option>
-                    <option value={10}>Dia 10</option>
-                    <option value={15}>Dia 15</option>
-                  </select>
+                  <label className="text-zinc-700 font-semibold block mb-1">Vencimento (1 a 31)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={dueDayInput}
+                    onChange={(e) => setDueDayInput(e.target.value)}
+                    onBlur={() => {
+                      const parsed = parseInt(dueDayInput, 10);
+                      if (isNaN(parsed) || parsed < 1) setDueDayInput('1');
+                      else if (parsed > 31) setDueDayInput('31');
+                    }}
+                    placeholder="Ex: 10"
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono font-bold"
+                  />
                 </div>
               </div>
 
@@ -1217,13 +1356,13 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                       enrollment: {
                         modalityId: chosenMod?.id || 'mod-1',
                         modalityName: chosenMod?.name || 'Pilates em Aparelhos',
-                        daysPerWeek: chosenMod?.daysPerWeek || 2,
-                        scheduleDays: ['Segunda', 'Quarta'],
+                        daysPerWeek: chosenMod?.daysPerWeek || selectedDays.length || 2,
+                        scheduleDays: selectedDays.length > 0 ? selectedDays : ['Segunda', 'Quarta'],
                         scheduleTime,
-                        instructorId: chosenInst.id,
-                        instructorName: chosenInst.name,
+                        instructorId: chosenInst?.id || '',
+                        instructorName: chosenInst?.name || 'A definir',
                         monthlyFee: chosenMod?.price || 380,
-                        dueDay,
+                        dueDay: getParsedDueDay(),
                         paymentStatus: 'em_dia',
                         startDate: new Date().toISOString().split('T')[0]
                       }

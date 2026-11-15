@@ -15,8 +15,10 @@ import {
   ClassStudentSlot, 
   AgendaClassSession, 
   Instructor, 
-  Modality 
+  Modality,
+  StudioOperatingConfig
 } from '../../types/studio';
+import { getEffectiveScheduleForInstructor, getSlotsForDay } from '../../utils/scheduleSlots';
 
 interface RemarcarHorarioModalProps {
   slot: ClassStudentSlot;
@@ -24,6 +26,7 @@ interface RemarcarHorarioModalProps {
   sessions: AgendaClassSession[];
   instructors: Instructor[];
   modalities: Modality[];
+  operatingConfig: StudioOperatingConfig;
   onConfirmReschedule: (
     sourceSessionId: string,
     slotId: string,
@@ -41,6 +44,7 @@ export const RemarcarHorarioModal: React.FC<RemarcarHorarioModalProps> = ({
   sessions,
   instructors,
   modalities,
+  operatingConfig,
   onConfirmReschedule,
   onClose,
 }) => {
@@ -63,11 +67,12 @@ export const RemarcarHorarioModal: React.FC<RemarcarHorarioModalProps> = ({
   const selectedInstructor = instructors.find(i => i.id === targetInstructorId) || instructors[0];
   const originalInstructor = instructors.find(i => i.id === sourceSession.instructorId) || instructors[0];
 
-  // Common Pilates time slots
-  const TIME_SLOTS = [
-    '07:00', '08:00', '09:00', '10:00', '11:00', 
-    '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'
-  ];
+  // Horários dinâmicos conforme janela cadastrada em 3. Agenda
+  const targetDayOfWeek = new Date(targetDate + 'T12:00:00').getDay();
+  const TIME_SLOTS = getSlotsForDay(
+    getEffectiveScheduleForInstructor(operatingConfig, targetInstructorId),
+    targetDayOfWeek
+  );
 
   // Helper to get capacity of a slot on the target date
   const getSlotInfo = (time: string) => {
@@ -199,33 +204,39 @@ export const RemarcarHorarioModal: React.FC<RemarcarHorarioModalProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-              {TIME_SLOTS.map((t) => {
-                const info = getSlotInfo(t);
-                const isSelected = targetTime === t;
+            {TIME_SLOTS.length === 0 ? (
+              <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200 text-center text-zinc-500">
+                Não há horários de atendimento configurados para este dia/professor em Ajustar Horários.
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                {TIME_SLOTS.map((t) => {
+                  const info = getSlotInfo(t);
+                  const isSelected = targetTime === t;
 
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    disabled={info.isFull}
-                    onClick={() => setTargetTime(t)}
-                    className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center ${
-                      info.isFull
-                        ? 'bg-zinc-100 border-zinc-200 text-zinc-400 cursor-not-allowed opacity-50'
-                        : isSelected
-                        ? 'bg-purple-600 text-white border-purple-600 font-bold shadow-2xs'
-                        : 'bg-white border-zinc-200 text-zinc-800 hover:border-purple-300 hover:bg-purple-50/40'
-                    }`}
-                  >
-                    <span className="font-mono text-xs">{t}</span>
-                    <span className={`text-[9px] mt-0.5 ${isSelected ? 'text-purple-200' : 'text-zinc-400'}`}>
-                      {info.isFull ? 'Lotado' : `${info.free} vaga(s)`}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      disabled={info.isFull}
+                      onClick={() => setTargetTime(t)}
+                      className={`py-2 px-1 rounded-xl border text-center transition-all flex flex-col items-center justify-center ${
+                        info.isFull
+                          ? 'bg-zinc-100 border-zinc-200 text-zinc-400 cursor-not-allowed opacity-50'
+                          : isSelected
+                          ? 'bg-purple-600 text-white border-purple-600 font-bold shadow-2xs'
+                          : 'bg-white border-zinc-200 text-zinc-800 hover:border-purple-300 hover:bg-purple-50/40'
+                      }`}
+                    >
+                      <span className="font-mono text-xs">{t}</span>
+                      <span className={`text-[9px] mt-0.5 ${isSelected ? 'text-purple-200' : 'text-zinc-400'}`}>
+                        {info.isFull ? 'Lotado' : `${info.free} vaga(s)`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Banner de Comissão Adicional quando for outro professor */}

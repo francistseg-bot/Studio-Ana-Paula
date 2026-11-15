@@ -33,6 +33,11 @@ import {
 import { AjusteHorariosModal } from './AjusteHorariosModal';
 import { RemarcarHorarioModal } from './RemarcarHorarioModal';
 import { AddStudentToSlotModal } from './AddStudentToSlotModal';
+import {
+  getEffectiveScheduleForInstructor,
+  getSlotsForDay,
+  getAllEnabledSlotsForWeek
+} from '../../utils/scheduleSlots';
 
 interface AgendaViewProps {
   sessions: AgendaClassSession[];
@@ -140,12 +145,18 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   };
 
   const weekDates = getWeekDates(selectedDate);
+  const selectedDayOfWeek = new Date(selectedDate + 'T12:00:00').getDay();
 
-  // Time slots typical for Pilates Studio based on studioOperatingConfig
-  const TIME_SLOTS = [
-    '07:00', '08:00', '09:00', '10:00', '11:00', 
-    '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'
-  ];
+  // Horários dinâmicos para a grade semanal baseados em operatingConfig
+  const weeklyTimeSlots = (() => {
+    const configured = getAllEnabledSlotsForWeek(operatingConfig, instructorFilter);
+    const weekDateSet = new Set(weekDates.map(d => d.date));
+    const sessionTimes = sessions
+      .filter(s => weekDateSet.has(s.date) && s.students.length > 0 && (instructorFilter === 'all' || s.instructorId === instructorFilter))
+      .map(s => s.time);
+    const merged = Array.from(new Set([...configured, ...sessionTimes])).sort();
+    return merged;
+  })();
 
   // Helper to get or create a session in state
   const getSessionFor = (date: string, time: string, instructorId: string): AgendaClassSession => {
@@ -504,12 +515,29 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
                 {/* Timeline Slots */}
                 <div className="divide-y divide-zinc-100">
-                  {TIME_SLOTS.map((time) => {
-                    const session = getSessionFor(selectedDate, time, instructor.id);
-                    const studentsInSlot = session.students;
-                    const isFull = studentsInSlot.length >= (session.maxCapacity || 4);
+                  {(() => {
+                    const instSchedule = getEffectiveScheduleForInstructor(operatingConfig, instructor.id);
+                    const configuredSlots = getSlotsForDay(instSchedule, selectedDayOfWeek);
+                    const existingTimes = sessions
+                      .filter(s => s.date === selectedDate && s.instructorId === instructor.id && s.students.length > 0)
+                      .map(s => s.time);
+                    const daySlots = Array.from(new Set([...configuredSlots, ...existingTimes])).sort();
 
-                    return (
+                    if (daySlots.length === 0) {
+                      return (
+                        <div className="p-6 text-center text-xs text-zinc-500">
+                          Nenhum horário de atendimento configurado para este dia em <strong>Ajustar Horários</strong>.
+                        </div>
+                      );
+                    }
+
+                    return daySlots.map((time) => {
+                      const session = getSessionFor(selectedDate, time, instructor.id);
+                      const studentsInSlot = session.students;
+                      const maxCap = session.maxCapacity || operatingConfig.defaultCapacity || 4;
+                      const isFull = studentsInSlot.length >= maxCap;
+
+                      return (
                       <div key={time} className="p-4 hover:bg-zinc-50/50 transition-colors">
                         <div className="flex flex-col lg:flex-row lg:items-start gap-4">
                           
@@ -728,8 +756,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
                         </div>
                       </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
 
               </div>
@@ -767,7 +796,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
             {/* Time Slot Rows */}
             <div className="divide-y divide-zinc-100 text-xs">
-              {TIME_SLOTS.map((time) => (
+              {weeklyTimeSlots.map((time) => (
                 <div key={time} className="grid grid-cols-7 min-h-[85px]">
                   
                   {/* Time label */}
@@ -963,6 +992,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           sessions={sessions}
           instructors={activeInstructors}
           modalities={modalities}
+          operatingConfig={operatingConfig}
           onConfirmReschedule={handleConfirmReschedule}
           onClose={() => setRescheduleData(null)}
         />

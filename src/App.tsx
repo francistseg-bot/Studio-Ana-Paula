@@ -359,7 +359,7 @@ export default function App() {
 
     const { scheduleDays, scheduleTime, instructorId, instructorName, modalityName } = student.enrollment;
     const daysOfWeekMap: Record<string, number> = {
-      'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6
+      'Domingo': 0, 'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6
     };
 
     const today = new Date();
@@ -881,6 +881,7 @@ export default function App() {
               modalities={modalities}
               instructors={instructors}
               companyData={companyData}
+              operatingConfig={operatingConfig}
               initialFilter={alunosFilter}
               onAddStudent={handleAddStudent}
               onUpdateStudent={handleUpdateStudent}
