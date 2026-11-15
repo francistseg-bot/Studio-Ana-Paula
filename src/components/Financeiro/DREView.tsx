@@ -25,9 +25,13 @@ import {
   MainNavigation, 
   AgendaClassSession, 
   Modality, 
-  MonthlyCommissionClosing 
+  MonthlyCommissionClosing,
+  CommissionOverridesMap,
+  StudentCommissionOverride
 } from '../../types/studio';
 import { FecharComissaoModal } from './FecharComissaoModal';
+import { EditarComissaoAlunosModal } from './EditarComissaoAlunosModal';
+import { calculateInstructorCommission } from '../../utils/commissionCalculator';
 
 interface DREViewProps {
   students: Student[];
@@ -36,6 +40,8 @@ interface DREViewProps {
   agendaSessions?: AgendaClassSession[];
   modalities?: Modality[];
   commissionClosings?: MonthlyCommissionClosing[];
+  commissionOverrides?: CommissionOverridesMap;
+  onUpdateCommissionOverrides?: (periodKey: string, overrides: Record<string, StudentCommissionOverride>) => void;
   onSaveCommissionClosing?: (closing: MonthlyCommissionClosing) => void;
   onReopenCommissionClosing?: (closingId: string) => void;
   onNavigateTab?: (tab: MainNavigation) => void;
@@ -48,6 +54,8 @@ export const DREView: React.FC<DREViewProps> = ({
   agendaSessions = [],
   modalities = [],
   commissionClosings = [],
+  commissionOverrides = {},
+  onUpdateCommissionOverrides,
   onSaveCommissionClosing,
   onReopenCommissionClosing,
   onNavigateTab
@@ -62,6 +70,9 @@ export const DREView: React.FC<DREViewProps> = ({
   // Modal para fechar comissão e emitir relatório
   const [isFecharComissaoOpen, setIsFecharComissaoOpen] = useState(false);
   const [selectedInstructorForClosing, setSelectedInstructorForClosing] = useState<string>('');
+
+  // Modal para visualizar relação de alunos atendidos e editar comissões por aluno (pré-fechamento)
+  const [editingStudentsInstructorId, setEditingStudentsInstructorId] = useState<string | null>(null);
 
   const monthsList = [
     { num: 1, name: 'Janeiro' },
@@ -108,42 +119,29 @@ export const DREView: React.FC<DREViewProps> = ({
     (acc, s) => acc + (s.enrollment?.monthlyFee || 0), 0
   );
 
-  // 4. Comissões dos Professores (Calculada sobre valor integral das mensalidades + fechamentos homologados)
+  // 4. Comissões dos Professores (Calculada sobre valor integral + ajustes por aluno pré-fechamento + fechamentos homologados)
   const instructorCommissions = instructors.map(inst => {
-    // Verifica se a comissão mensal foi homologada/fechada para este mês
-    const closed = commissionClosings?.find(
-      c => c.instructorId === inst.id && c.month === selectedMonth && c.year === selectedYear
-    );
-
-    const assignedStudents = activeStudents.filter(s => s.enrollment?.instructorId === inst.id);
-    const revenueGenerated = assignedStudents.reduce((acc, s) => acc + (s.enrollment?.monthlyFee || 0), 0);
-    const estimatedCommission = (revenueGenerated * inst.commissionPercentage) / 100;
-
-    // Reposições atendidas no mês
-    const replacementSlots = (agendaSessions || []).flatMap(sess => {
-      const sessDate = new Date(sess.date);
-      const isSamePeriod = (sessDate.getMonth() + 1 === selectedMonth && sessDate.getFullYear() === selectedYear) || !sess.date;
-      if (sess.instructorId === inst.id && isSamePeriod) {
-        return sess.students.filter(slot => slot.isReplacement && slot.originalInstructorId && slot.originalInstructorId !== inst.id);
-      }
-      return [];
+    const calc = calculateInstructorCommission({
+      instructor: inst,
+      month: selectedMonth,
+      year: selectedYear,
+      students,
+      agendaSessions,
+      modalities,
+      commissionClosings,
+      commissionOverrides,
     });
-    const replacementTotal = replacementSlots.reduce((acc, slot) => acc + (slot.additionalCommissionPaid || 35.00), 0);
-
-    // Se estiver fechada/homologada, utiliza o valor exato fechado que compõe o DRE!
-    const finalCommissionValue = closed 
-      ? closed.totalFinalCommission 
-      : (estimatedCommission + replacementTotal);
 
     return {
       instructor: inst,
-      studentCount: closed ? closed.attendedStudents.length : assignedStudents.length,
-      revenueGenerated,
-      commissionPercentage: inst.commissionPercentage,
-      commissionValue: finalCommissionValue,
-      isClosed: !!closed,
-      closedAt: closed?.closedAt,
-      closedRecord: closed,
+      studentCount: calc.rows.length,
+      revenueGenerated: calc.revenueGenerated,
+      commissionPercentage: calc.commissionPercentage,
+      commissionValue: calc.totalFinalCommission,
+      isClosed: calc.isClosed,
+      closedAt: calc.closedAt || undefined,
+      closedRecord: calc.closingRecord,
+      hasManualOverrides: calc.hasManualOverrides,
     };
   });
 
@@ -558,7 +556,7 @@ export const DREView: React.FC<DREViewProps> = ({
                   <tr className="bg-zinc-50 border-b border-zinc-200 text-zinc-600 font-semibold">
                     <th className="p-2.5">Professor / Fisioterapeuta</th>
                     <th className="p-2.5">Alunos Atendidos</th>
-                    <th className="p-2.5">% Comissão</th>
+                    <th className="p-2.5">% Padrão</th>
                     <th className="p-2.5">Status do Mês</th>
                     <th className="p-2.5 font-bold text-zinc-900">Valor no DRE</th>
                     <th className="p-2.5 text-right">Ações</th>
@@ -574,40 +572,68 @@ export const DREView: React.FC<DREViewProps> = ({
                         </div>
                       </td>
                       <td className="p-2.5">
-                        <span className="font-medium text-zinc-800">{item.studentCount} alunos</span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingStudentsInstructorId(item.instructor.id)}
+                          className="inline-flex items-center gap-1.5 font-semibold text-teal-800 hover:text-teal-950 bg-teal-50/80 hover:bg-teal-100 border border-teal-200/80 px-2.5 py-1 rounded-lg transition-colors"
+                          title="Visualizar alunos atendidos e editar comissão por aluno"
+                        >
+                          <Users className="w-3.5 h-3.5 text-teal-700" />
+                          <span>{item.studentCount} alunos</span>
+                        </button>
                       </td>
                       <td className="p-2.5 font-semibold text-purple-700">{item.commissionPercentage}%</td>
                       <td className="p-2.5">
-                        {item.isClosed ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            <Lock className="w-3 h-3 text-emerald-600" />
-                            <span>Fechada {item.closedAt ? `(${new Date(item.closedAt).toLocaleDateString('pt-BR')})` : ''}</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-                            <Unlock className="w-3 h-3 text-amber-600" />
-                            <span>Em Aberto</span>
-                          </span>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1">
+                          {item.isClosed ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              <Lock className="w-3 h-3 text-emerald-600" />
+                              <span>Fechada {item.closedAt ? `(${new Date(item.closedAt).toLocaleDateString('pt-BR')})` : ''}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                              <Unlock className="w-3 h-3 text-amber-600" />
+                              <span>Em Aberto</span>
+                            </span>
+                          )}
+                          {item.hasManualOverrides && !item.isClosed && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                              Editado por aluno
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-2.5 font-mono font-bold text-sm text-purple-900">
                         R$ {item.commissionValue.toFixed(2)}
                       </td>
                       <td className="p-2.5 text-right">
-                        <button
-                          onClick={() => {
-                            setSelectedInstructorForClosing(item.instructor.id);
-                            setIsFecharComissaoOpen(true);
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs inline-flex items-center gap-1.5 transition-colors ${
-                            item.isClosed
-                              ? 'bg-zinc-900 hover:bg-zinc-800 text-white'
-                              : 'bg-purple-700 hover:bg-purple-600 text-white'
-                          }`}
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>{item.isClosed ? 'Ver Relatório' : 'Fechar Comissão'}</span>
-                        </button>
+                        <div className="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setEditingStudentsInstructorId(item.instructor.id)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-900 shadow-2xs inline-flex items-center gap-1.5 transition-colors"
+                            title="Abrir relação de alunos atendidos e editar valor de comissão por aluno"
+                          >
+                            <Users className="w-3.5 h-3.5 text-teal-700" />
+                            <span>{item.isClosed ? 'Ver Alunos' : 'Alunos / Editar'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedInstructorForClosing(item.instructor.id);
+                              setIsFecharComissaoOpen(true);
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs inline-flex items-center gap-1.5 transition-colors ${
+                              item.isClosed
+                                ? 'bg-zinc-900 hover:bg-zinc-800 text-white'
+                                : 'bg-purple-700 hover:bg-purple-600 text-white'
+                            }`}
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>{item.isClosed ? 'Ver Relatório' : 'Fechar Comissão'}</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -819,7 +845,11 @@ export const DREView: React.FC<DREViewProps> = ({
             </div>
             {instructorCommissions.map(c => (
               <div key={c.instructor.id} className="flex justify-between items-center text-zinc-500 pl-4 text-xs">
-                <span>(-) {c.instructor.name} ({c.commissionPercentage}% sobre R$ {c.revenueGenerated.toFixed(2)})</span>
+                <span>
+                  (-) {c.instructor.name} ({c.commissionPercentage}% sobre R$ {c.revenueGenerated.toFixed(2)}
+                  {c.hasManualOverrides ? ' · Ajustado por aluno' : ''}
+                  {c.isClosed ? ' · Fechado' : ''})
+                </span>
                 <span>R$ {c.commissionValue.toFixed(2)}</span>
               </div>
             ))}
@@ -874,6 +904,37 @@ export const DREView: React.FC<DREViewProps> = ({
 
       </div>
 
+      {/* Modal de Edição Manual de Comissão por Aluno (Pré-Fechamento) */}
+      {editingStudentsInstructorId && (() => {
+        const targetInstructor = instructors.find(i => i.id === editingStudentsInstructorId);
+        if (!targetInstructor) return null;
+        const monthName = monthsList.find(m => m.num === selectedMonth)?.name || '';
+        return (
+          <EditarComissaoAlunosModal
+            isOpen={true}
+            onClose={() => setEditingStudentsInstructorId(null)}
+            instructor={targetInstructor}
+            month={selectedMonth}
+            monthName={monthName}
+            year={selectedYear}
+            students={students}
+            agendaSessions={agendaSessions}
+            modalities={modalities}
+            commissionClosings={commissionClosings}
+            commissionOverrides={commissionOverrides}
+            onSaveOverrides={(periodKey, overrides) => {
+              if (onUpdateCommissionOverrides) {
+                onUpdateCommissionOverrides(periodKey, overrides);
+              }
+            }}
+            onOpenClosingModal={() => {
+              setSelectedInstructorForClosing(targetInstructor.id);
+              setIsFecharComissaoOpen(true);
+            }}
+          />
+        );
+      })()}
+
       {/* Modal de Fechamento de Comissão e Emissão de Relatório */}
       {isFecharComissaoOpen && (
         <FecharComissaoModal
@@ -887,6 +948,7 @@ export const DREView: React.FC<DREViewProps> = ({
           initialMonth={selectedMonth}
           initialYear={selectedYear}
           commissionClosings={commissionClosings}
+          commissionOverrides={commissionOverrides}
           onSaveClosing={(closing) => {
             if (onSaveCommissionClosing) onSaveCommissionClosing(closing);
           }}

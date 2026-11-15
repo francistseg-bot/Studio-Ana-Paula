@@ -15,7 +15,7 @@ import {
   Lock,
   CheckCircle2
 } from 'lucide-react';
-import { Instructor, Student, AgendaClassSession, Modality, MonthlyCommissionClosing } from '../../types/studio';
+import { Instructor, Student, AgendaClassSession, Modality, MonthlyCommissionClosing, CommissionOverridesMap } from '../../types/studio';
 import { FecharComissaoModal } from '../Financeiro/FecharComissaoModal';
 
 interface ProfessoresViewProps {
@@ -24,6 +24,7 @@ interface ProfessoresViewProps {
   agendaSessions?: AgendaClassSession[];
   modalities?: Modality[];
   commissionClosings?: MonthlyCommissionClosing[];
+  commissionOverrides?: CommissionOverridesMap;
   onSaveCommissionClosing?: (closing: MonthlyCommissionClosing) => void;
   onReopenCommissionClosing?: (closingId: string) => void;
   onAddInstructor: (instructor: Instructor) => void;
@@ -38,6 +39,7 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
   agendaSessions = [],
   modalities = [],
   commissionClosings = [],
+  commissionOverrides = {},
   onSaveCommissionClosing,
   onReopenCommissionClosing,
   onAddInstructor,
@@ -521,6 +523,7 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
           agendaSessions={agendaSessions}
           modalities={modalities}
           commissionClosings={commissionClosings}
+          commissionOverrides={commissionOverrides}
           onSaveClosing={(closing) => {
             if (onSaveCommissionClosing) onSaveCommissionClosing(closing);
           }}

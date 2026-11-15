@@ -22,8 +22,9 @@ import {
   AgendaClassSession, 
   Modality, 
   MonthlyCommissionClosing,
-  AttendedStudentCommissionItem 
+  CommissionOverridesMap
 } from '../../types/studio';
+import { calculateInstructorCommission } from '../../utils/commissionCalculator';
 
 interface FecharComissaoModalProps {
   isOpen: boolean;
@@ -33,6 +34,7 @@ interface FecharComissaoModalProps {
   agendaSessions: AgendaClassSession[];
   modalities: Modality[];
   commissionClosings: MonthlyCommissionClosing[];
+  commissionOverrides?: CommissionOverridesMap;
   onSaveClosing: (closing: MonthlyCommissionClosing) => void;
   onReopenClosing: (closingId: string) => void;
   preselectedInstructorId?: string;
@@ -48,6 +50,7 @@ export const FecharComissaoModal: React.FC<FecharComissaoModalProps> = ({
   agendaSessions,
   modalities,
   commissionClosings,
+  commissionOverrides = {},
   onSaveClosing,
   onReopenClosing,
   preselectedInstructorId,
@@ -86,22 +89,8 @@ export const FecharComissaoModal: React.FC<FecharComissaoModalProps> = ({
     );
   }, [commissionClosings, selectedInstructorId, selectedMonth, selectedYear]);
 
-  // Se já fechado, usa o snapshot histórico; se aberto, calcula em tempo real
+  // Se já fechado, usa o snapshot histórico; se aberto, calcula em tempo real respeitando ajustes manuais por aluno
   const calculationData = useMemo(() => {
-    if (existingClosing) {
-      return {
-        isClosed: true,
-        closingId: existingClosing.id,
-        closedAt: existingClosing.closedAt,
-        commissionPercentage: existingClosing.commissionPercentage,
-        attendedStudents: existingClosing.attendedStudents,
-        totalMonthlyCommission: existingClosing.totalMonthlyCommission,
-        totalSingleClassesCommission: existingClosing.totalSingleClassesCommission,
-        totalReplacementCommission: existingClosing.totalReplacementCommission,
-        totalFinalCommission: existingClosing.totalFinalCommission,
-      };
-    }
-
     if (!currentInstructor) {
       return {
         isClosed: false,
@@ -116,107 +105,26 @@ export const FecharComissaoModal: React.FC<FecharComissaoModalProps> = ({
       };
     }
 
-    const commPct = currentInstructor.commissionPercentage || 40;
-    const items: AttendedStudentCommissionItem[] = [];
-
-    // 1. Matrículas Ativas Vinculadas a este Professor
-    const assignedStudents = students.filter(
-      s => s.status === 'ativo' && s.enrollment && s.enrollment.instructorId === currentInstructor.id
-    );
-
-    let sumMonthly = 0;
-    assignedStudents.forEach(st => {
-      const fee = st.enrollment?.monthlyFee || 0;
-      // Regra: comissão calculada sobre o valor integral contratual da mensalidade
-      const commAmount = (fee * commPct) / 100;
-      sumMonthly += commAmount;
-
-      items.push({
-        studentId: st.id,
-        studentName: st.name,
-        type: 'mensalidade',
-        modalityName: st.enrollment?.modalityName || 'Pilates Regular',
-        commissionAmount: commAmount,
-        details: `Comissão Contratual (${commPct}%)`,
-      });
+    return calculateInstructorCommission({
+      instructor: currentInstructor,
+      month: selectedMonth,
+      year: selectedYear,
+      students,
+      agendaSessions,
+      modalities,
+      commissionClosings,
+      commissionOverrides,
     });
-
-    // 2. Aulas de Reposição Atendidas (Alunos vindos de outro professor)
-    let sumReplacement = 0;
-    const replacementSlots = agendaSessions.flatMap(sess => {
-      // Filtrar pelo mês/ano da sessão se compatível
-      const sessDate = new Date(sess.date);
-      const isSamePeriod = (sessDate.getMonth() + 1 === selectedMonth && sessDate.getFullYear() === selectedYear) || !sess.date;
-
-      if (sess.instructorId === currentInstructor.id && isSamePeriod) {
-        return sess.students
-          .filter(slot => slot.isReplacement && slot.originalInstructorId && slot.originalInstructorId !== currentInstructor.id)
-          .map(slot => ({ slot, date: sess.date, time: sess.time }));
-      }
-      return [];
-    });
-
-    replacementSlots.forEach(({ slot, date, time }) => {
-      const repFee = slot.additionalCommissionPaid || 35.00;
-      sumReplacement += repFee;
-
-      items.push({
-        studentId: slot.studentId,
-        studentName: slot.studentName,
-        type: 'reposicao',
-        modalityName: 'Aula de Reposição',
-        commissionAmount: repFee,
-        details: `Reposição realizada (Substituto: ${slot.originalInstructorName ? `de ${slot.originalInstructorName}` : 'outro professor'})`,
-        date: date ? `${date.split('-').reverse().join('/')} às ${time}` : undefined,
-      });
-    });
-
-    // 3. Aulas Avulsas / Sessões Avulsas atendidas
-    let sumSingle = 0;
-    const singleClassSlots = agendaSessions.flatMap(sess => {
-      const sessDate = new Date(sess.date);
-      const isSamePeriod = (sessDate.getMonth() + 1 === selectedMonth && sessDate.getFullYear() === selectedYear) || !sess.date;
-
-      if (sess.instructorId === currentInstructor.id && isSamePeriod) {
-        return sess.students
-          .filter(slot => slot.notes?.toLowerCase().includes('avulsa') || slot.notes?.toLowerCase().includes('sessão'))
-          .map(slot => ({ slot, date: sess.date, time: sess.time }));
-      }
-      return [];
-    });
-
-    singleClassSlots.forEach(({ slot, date, time }) => {
-      // Valor padrão de aula avulsa ou percentual
-      const avulsaMod = modalities.find(m => m.billingType === 'aula_avulsa');
-      const basePrice = avulsaMod?.price || 130.00;
-      const commAmount = (basePrice * commPct) / 100;
-      sumSingle += commAmount;
-
-      items.push({
-        studentId: slot.studentId,
-        studentName: slot.studentName,
-        type: 'aula_avulsa',
-        modalityName: 'Sessão Avulsa',
-        commissionAmount: commAmount,
-        details: `Atendimento avulso (${commPct}%)`,
-        date: date ? `${date.split('-').reverse().join('/')} às ${time}` : undefined,
-      });
-    });
-
-    const finalTotal = sumMonthly + sumReplacement + sumSingle;
-
-    return {
-      isClosed: false,
-      closingId: '',
-      closedAt: '',
-      commissionPercentage: commPct,
-      attendedStudents: items,
-      totalMonthlyCommission: sumMonthly,
-      totalSingleClassesCommission: sumSingle,
-      totalReplacementCommission: sumReplacement,
-      totalFinalCommission: finalTotal,
-    };
-  }, [existingClosing, currentInstructor, students, agendaSessions, modalities, selectedMonth, selectedYear]);
+  }, [
+    currentInstructor,
+    students,
+    agendaSessions,
+    modalities,
+    commissionClosings,
+    commissionOverrides,
+    selectedMonth,
+    selectedYear,
+  ]);
 
   if (!isOpen || !currentInstructor) return null;
 

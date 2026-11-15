@@ -35,7 +35,9 @@ import {
   Expense,
   ExpenseCategory,
   MonthlyCommissionClosing,
-  PaymentMethod
+  PaymentMethod,
+  CommissionOverridesMap,
+  StudentCommissionOverride
 } from './types/studio';
 
 import { 
@@ -105,6 +107,10 @@ export default function App() {
 
   const [commissionClosings, setCommissionClosings] = useState<MonthlyCommissionClosing[]>(() =>
     getStudioData('commissionClosings', [])
+  );
+
+  const [commissionOverrides, setCommissionOverrides] = useState<CommissionOverridesMap>(() =>
+    getStudioData('commissionOverrides', {})
   );
 
   // Sessão de Usuário Autenticado (Login Inicial)
@@ -227,10 +233,15 @@ export default function App() {
           const { id, ...rest } = opConfig;
           setOperatingConfig(rest as StudioOperatingConfig);
         }
+        const commOverrides = cloudSettings.find(s => s.id === 'commissionOverrides');
+        if (commOverrides && commOverrides.entries) {
+          setCommissionOverrides(commOverrides.entries as CommissionOverridesMap);
+        }
       },
       [
         { id: 'companyData', ...INITIAL_COMPANY_DATA },
-        { id: 'operatingConfig', ...INITIAL_OPERATING_CONFIG }
+        { id: 'operatingConfig', ...INITIAL_OPERATING_CONFIG },
+        { id: 'commissionOverrides', entries: {} }
       ]
     );
 
@@ -289,6 +300,10 @@ export default function App() {
   }, [commissionClosings]);
 
   useEffect(() => {
+    setStudioData('commissionOverrides', commissionOverrides);
+  }, [commissionOverrides]);
+
+  useEffect(() => {
     setStudioData('currentUser', currentUser);
   }, [currentUser]);
 
@@ -330,6 +345,22 @@ export default function App() {
   const handleReopenCommissionClosing = (closingId: string) => {
     setCommissionClosings(prev => prev.filter(c => c.id !== closingId));
     deleteDocument('commissionClosings', closingId);
+  };
+
+  const handleUpdateCommissionOverrides = (
+    periodKey: string,
+    overrides: Record<string, StudentCommissionOverride>
+  ) => {
+    setCommissionOverrides(prev => {
+      const next = { ...prev };
+      if (Object.keys(overrides).length === 0) {
+        delete next[periodKey];
+      } else {
+        next[periodKey] = overrides;
+      }
+      saveDocument('settings', { id: 'commissionOverrides', entries: next });
+      return next;
+    });
   };
 
   // Navigation handler from balloons or menus
@@ -898,6 +929,7 @@ export default function App() {
               agendaSessions={agendaSessions}
               modalities={modalities}
               commissionClosings={commissionClosings}
+              commissionOverrides={commissionOverrides}
               onSaveCommissionClosing={handleSaveCommissionClosing}
               onReopenCommissionClosing={handleReopenCommissionClosing}
               onAddInstructor={handleAddInstructor}
@@ -1016,6 +1048,8 @@ export default function App() {
               agendaSessions={agendaSessions}
               modalities={modalities}
               commissionClosings={commissionClosings}
+              commissionOverrides={commissionOverrides}
+              onUpdateCommissionOverrides={handleUpdateCommissionOverrides}
               onSaveCommissionClosing={handleSaveCommissionClosing}
               onReopenCommissionClosing={handleReopenCommissionClosing}
               onNavigateTab={(tab) => handleNavigate(tab)}

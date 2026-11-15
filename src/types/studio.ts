@@ -220,3 +220,16 @@ export interface MonthlyCommissionClosing {
   attendedStudents: AttendedStudentCommissionItem[];
   notes?: string;
 }
+
+export interface StudentCommissionOverride {
+  itemKey: string;
+  studentId: string;
+  studentName: string;
+  customAmount: number;
+  isManualAddition?: boolean;
+  notes?: string;
+}
+
+// Keyed by `${year}-${month}__${instructorId}` -> Record<itemKey, StudentCommissionOverride>
+export type CommissionOverridesMap = Record<string, Record<string, StudentCommissionOverride>>;
+
