@@ -63,12 +63,9 @@ export function studentMatchesInstructor(student: Student, instructor: Instructo
   return false;
 }
 
-function isDateOnOrAfterEnrollmentWeek(dateIso: string, startDate?: string): boolean {
+function isDateOnOrAfterStartDate(dateIso: string, startDate?: string): boolean {
   if (!startDate) return true;
-  const startWeekMonday = getMondayOfWeekIso(startDate);
-  const currentWeekMonday = getMondayOfWeekIso(toLocalIsoDate(new Date()));
-  const effectiveMonday = startWeekMonday < currentWeekMonday ? startWeekMonday : currentWeekMonday;
-  return dateIso >= effectiveMonday;
+  return dateIso >= startDate;
 }
 
 /**
@@ -89,17 +86,32 @@ export function getProjectedSessionFor(params: {
   );
 
   const dayOfWeek = new Date(date + 'T12:00:00').getDay();
-  const baseStudents: ClassStudentSlot[] = existing ? [...existing.students] : [];
+  const studentById = new Map(students.map(s => [s.id, s]));
+
+  // Preserva presenças/faltas/reposições manuais, mas filtra slots automáticos pendentes anteriores à Data de Início
+  const baseStudents: ClassStudentSlot[] = existing
+    ? existing.students.filter(sl => {
+        const isAutoEnrollmentSlot =
+          sl.id.startsWith(`slot-${sl.studentId}-`) &&
+          sl.attendanceStatus === 'agendado' &&
+          !sl.isReplacement;
+        if (!isAutoEnrollmentSlot) return true;
+        const st = studentById.get(sl.studentId);
+        if (!st || st.status !== 'ativo' || !st.enrollment) return false;
+        return isDateOnOrAfterStartDate(date, st.enrollment.startDate);
+      })
+    : [];
+
   const removedSet = new Set(existing?.removedStudentIds || []);
   const presentIds = new Set(baseStudents.map(sl => sl.studentId));
 
-  // Projeta alunos ativos cuja matrícula inclui este dia da semana, horário e professor
+  // Projeta alunos ativos cuja matrícula inclui este dia da semana, horário, professor e Data de Início
   students.forEach(st => {
     if (st.status !== 'ativo' || !st.enrollment) return;
     if (st.enrollment.scheduleTime !== time) return;
     if (!studentMatchesInstructor(st, instructor)) return;
     if (!enrollmentMatchesDayOfWeek(st.enrollment.scheduleDays, dayOfWeek)) return;
-    if (!isDateOnOrAfterEnrollmentWeek(date, st.enrollment.startDate)) return;
+    if (!isDateOnOrAfterStartDate(date, st.enrollment.startDate)) return;
     if (removedSet.has(st.id)) return;
     if (presentIds.has(st.id)) return;
 
@@ -167,7 +179,7 @@ export function getProjectedSessionsForDate(params: {
         st.enrollment.scheduleTime &&
         studentMatchesInstructor(st, inst) &&
         enrollmentMatchesDayOfWeek(st.enrollment.scheduleDays, dayOfWeek) &&
-        isDateOnOrAfterEnrollmentWeek(date, st.enrollment.startDate)
+        isDateOnOrAfterStartDate(date, st.enrollment.startDate)
       ) {
         timesSet.add(st.enrollment.scheduleTime);
       }

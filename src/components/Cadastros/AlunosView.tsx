@@ -99,6 +99,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
   const [scheduleTime, setScheduleTime] = useState('08:00');
   const [instructorId, setInstructorId] = useState(instructors[0]?.id || '');
   const [dueDayInput, setDueDayInput] = useState<string>('10');
+  const [startDate, setStartDate] = useState<string>(() => toLocalIsoDate(new Date()));
   const [paymentStatus, setPaymentStatus] = useState<'em_dia' | 'atrasado'>('em_dia');
 
   // Modal para inclusão rápida de matrícula em aluno já existente
@@ -181,6 +182,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
     setScheduleTime(defaultSchedule.slots[0] || '08:00');
     setInstructorId(defaultInstId);
     setDueDayInput('10');
+    setStartDate(toLocalIsoDate(new Date()));
     setPaymentStatus('em_dia');
     setEditingStudent(null);
   };
@@ -215,9 +217,11 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
       setScheduleTime(student.enrollment.scheduleTime);
       setInstructorId(student.enrollment.instructorId);
       setDueDayInput((student.enrollment.dueDay || 10).toString());
+      setStartDate(student.enrollment.startDate || student.createdAt || toLocalIsoDate(new Date()));
       setPaymentStatus(student.enrollment.paymentStatus);
     } else {
       setIncludeEnrollment(false);
+      setStartDate(student.createdAt || toLocalIsoDate(new Date()));
     }
 
     setIsAddStudentOpen(true);
@@ -246,7 +250,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
         monthlyFee: chosenMod?.price || 380.00,
         dueDay: getParsedDueDay(),
         paymentStatus,
-        startDate: existingEnr?.startDate || toLocalIsoDate(new Date())
+        startDate: startDate || toLocalIsoDate(new Date())
       };
     }
 
@@ -530,6 +534,11 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                             <span className="text-[11px] text-zinc-500 block truncate">
                               {student.enrollment.daysPerWeek}x ({student.enrollment.scheduleDays.join(', ')}) às {student.enrollment.scheduleTime}
                             </span>
+                            {student.enrollment.startDate && (
+                              <span className="text-[10px] text-teal-700 font-mono block mt-0.5">
+                                Início na agenda: {student.enrollment.startDate.split('-').reverse().join('/')}
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <button
@@ -543,6 +552,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                               setSelectedDays(defaultDays);
                               setScheduleTime(info.slots[0] || '08:00');
                               setDueDayInput('10');
+                              setStartDate(toLocalIsoDate(new Date()));
                             }}
                             className="text-xs text-teal-700 font-semibold hover:underline flex items-center gap-1"
                           >
@@ -1011,7 +1021,23 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div>
+                        <label className="text-zinc-700 font-semibold block mb-1">
+                          Data de Início *
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono focus:outline-none focus:ring-1 focus:ring-teal-600"
+                        />
+                        <span className="text-[10px] text-teal-800 block mt-1 leading-tight">
+                          Corte para entrada na 3. Agenda
+                        </span>
+                      </div>
+
                       <div>
                         <label className="text-zinc-700 font-semibold block mb-1">
                           Horário da Aula *
@@ -1299,7 +1325,20 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-zinc-700 font-semibold block mb-1">Data de Início *</label>
+                  <input
+                    type="date"
+                    required
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono"
+                  />
+                  <span className="text-[10px] text-teal-800 block mt-0.5 leading-tight">
+                    Corte na agenda
+                  </span>
+                </div>
                 <div>
                   <label className="text-zinc-700 font-semibold block mb-1">Horário (3. Agenda)</label>
                   <select
@@ -1365,7 +1404,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         monthlyFee: chosenMod?.price || 380,
                         dueDay: getParsedDueDay(),
                         paymentStatus: 'em_dia',
-                        startDate: toLocalIsoDate(new Date())
+                        startDate: startDate || toLocalIsoDate(new Date())
                       }
                     };
 

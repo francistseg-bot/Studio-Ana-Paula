@@ -405,7 +405,7 @@ export default function App() {
       };
     }
 
-    const { scheduleDays, scheduleTime, instructorId, instructorName, modalityName } = student.enrollment;
+    const { scheduleDays, scheduleTime, instructorId, instructorName, modalityName, startDate } = student.enrollment;
     const daysOfWeekMap: Record<string, number> = {
       Domingo: 0,
       Segunda: 1,
@@ -416,12 +416,14 @@ export default function App() {
       Sábado: 6,
     };
 
-    const today = new Date();
-    const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0);
+    const todayIso = toLocalIsoDate(new Date());
+    const anchorIso = startDate && startDate > todayIso ? startDate : todayIso;
+    const anchorDate = new Date(anchorIso + 'T12:00:00');
+    const monday = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate(), 12, 0, 0);
     const diffToMonday = monday.getDay() === 0 ? -6 : 1 - monday.getDay();
     monday.setDate(monday.getDate() + diffToMonday);
 
-    // Sincroniza da segunda-feira da semana atual até as próximas 4 semanas
+    // Sincroniza a partir da Data de Início nas próximas 4 semanas
     for (let week = 0; week < 4; week++) {
       for (const dayName of scheduleDays) {
         const dayOfWeek = daysOfWeekMap[dayName];
@@ -431,6 +433,8 @@ export default function App() {
         const sessionDate = new Date(monday);
         sessionDate.setDate(monday.getDate() + week * 7 + offsetFromMonday);
         const dateIso = toLocalIsoDate(sessionDate);
+
+        if (startDate && dateIso < startDate) continue;
 
         let sessionIndex = nextSessions.findIndex(
           s => s.date === dateIso && s.time === scheduleTime && s.instructorId === instructorId
