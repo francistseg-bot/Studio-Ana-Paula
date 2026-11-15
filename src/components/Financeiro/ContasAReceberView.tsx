@@ -12,14 +12,29 @@ import {
   Sparkles,
   Phone,
   Search,
-  Filter
+  Filter,
+  QrCode,
+  Banknote,
+  CreditCard
 } from 'lucide-react';
-import { Student, Instructor } from '../../types/studio';
+import { Student, Instructor, PaymentMethod } from '../../types/studio';
+
+const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: React.ReactNode }[] = [
+  { value: 'Pix', label: 'Pix', icon: <QrCode className="w-3.5 h-3.5" /> },
+  { value: 'Dinheiro', label: 'Dinheiro', icon: <Banknote className="w-3.5 h-3.5" /> },
+  { value: 'Débito', label: 'Débito', icon: <CreditCard className="w-3.5 h-3.5" /> },
+  { value: 'Crédito', label: 'Crédito', icon: <CreditCard className="w-3.5 h-3.5" /> },
+];
 
 interface ContasAReceberViewProps {
   students: Student[];
   instructors: Instructor[];
-  onTogglePaid: (studentId: string, paidAmount?: number, paymentDate?: string) => void;
+  onTogglePaid: (
+    studentId: string,
+    paidAmount?: number,
+    paymentDate?: string,
+    paymentMethod?: PaymentMethod
+  ) => void;
   onUpdateFee?: (studentId: string, newFee: number, dueDay: number) => void;
   onDeleteEnrollment?: (studentId: string) => void;
 }
@@ -41,6 +56,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
   const [effectivePaymentDate, setEffectivePaymentDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('Pix');
 
   // Modal para Edição da Mensalidade
   const [editModalStudent, setEditModalStudent] = useState<Student | null>(null);
@@ -111,6 +127,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
     setEffectivePaymentDate(
       student.enrollment?.paymentDate || new Date().toISOString().split('T')[0]
     );
+    setSelectedPaymentMethod(student.enrollment?.paymentMethod || 'Pix');
   };
 
   const handlePaidAmountChange = (val: string) => {
@@ -148,7 +165,7 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
       const parsed = parseFloat(effectivePaidAmount);
       const fee = baixaModalStudent.enrollment?.monthlyFee || 0;
       const finalPaid = !isNaN(parsed) && parsed >= 0 ? parsed : fee;
-      onTogglePaid(baixaModalStudent.id, finalPaid, effectivePaymentDate);
+      onTogglePaid(baixaModalStudent.id, finalPaid, effectivePaymentDate, selectedPaymentMethod);
       setBaixaModalStudent(null);
     }
   };
@@ -406,23 +423,36 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
 
                       {/* Status */}
                       <td className="p-3.5">
-                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold inline-flex items-center gap-1 ${
-                          isOverdue
-                            ? 'bg-rose-100 text-rose-800'
-                            : 'bg-emerald-100 text-emerald-800'
-                        }`}>
-                          {isOverdue ? (
-                            <>
-                              <AlertCircle className="w-3.5 h-3.5" />
-                              <span>Em Atraso</span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Em Dia / Pago</span>
-                            </>
+                        <div className="flex flex-col items-start gap-1">
+                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold inline-flex items-center gap-1 ${
+                            isOverdue
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {isOverdue ? (
+                              <>
+                                <AlertCircle className="w-3.5 h-3.5" />
+                                <span>Em Atraso</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Em Dia / Pago</span>
+                              </>
+                            )}
+                          </span>
+
+                          {!isOverdue && enr.paymentMethod && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-teal-50 text-teal-800 border border-teal-200/80">
+                              {enr.paymentMethod === 'Pix' && <QrCode className="w-3 h-3 text-teal-700" />}
+                              {enr.paymentMethod === 'Dinheiro' && <Banknote className="w-3 h-3 text-teal-700" />}
+                              {(enr.paymentMethod === 'Débito' || enr.paymentMethod === 'Crédito') && (
+                                <CreditCard className="w-3 h-3 text-teal-700" />
+                              )}
+                              <span>{enr.paymentMethod}</span>
+                            </span>
                           )}
-                        </span>
+                        </div>
                       </td>
 
                       {/* Ações: Baixa com Data/Desconto, Editar e Excluir */}
@@ -496,8 +526,8 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
         const isCurrentlyPaid = baixaModalStudent.enrollment?.paymentStatus === 'em_dia';
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in-95 duration-150">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in-95 duration-150 my-auto max-h-[92vh] overflow-y-auto">
               <div className="flex items-center gap-3 pb-3 border-b border-zinc-100">
                 <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
                   <DollarSign className="w-5 h-5" />
@@ -612,25 +642,6 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                   </div>
                 </div>
 
-                {/* Box de Confirmação da Regra de Negócio Solicitada */}
-                <div className="p-3 rounded-xl bg-teal-50/70 border border-teal-200 space-y-2">
-                  <div className="flex justify-between items-center text-teal-950 font-semibold">
-                    <span>Total a registrar em Recebidos:</span>
-                    <span className="font-extrabold font-mono text-sm text-teal-900">
-                      R$ {paidVal.toFixed(2)}
-                    </span>
-                  </div>
-                  {discountVal > 0 && (
-                    <div className="flex justify-between items-center text-[11px] text-amber-800">
-                      <span>Desconto Concedido:</span>
-                      <span className="font-mono font-bold">- R$ {discountVal.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="pt-2 border-t border-teal-200/70 text-[11px] text-teal-900 leading-relaxed">
-                    <strong>Regra da Comissão:</strong> A remuneração do professor ({commPct}%) é apurada sobre o <strong>valor integral contratado de R$ {fee.toFixed(2)}</strong> (= <strong>R$ {commVal.toFixed(2)}</strong>), garantindo a integridade dos repasses.
-                  </div>
-                </div>
-
                 {/* Data Efetiva */}
                 <div className="space-y-1">
                   <label className="font-semibold text-zinc-700 block">
@@ -642,6 +653,60 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                     onChange={(e) => setEffectivePaymentDate(e.target.value)}
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500"
                   />
+                </div>
+
+                {/* Flag de Forma de Pagamento */}
+                <div className="space-y-1.5">
+                  <label className="font-semibold text-zinc-700 block">
+                    Forma de Pagamento *
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label="Forma de Pagamento">
+                    {PAYMENT_METHODS.map((method) => {
+                      const isSelected = selectedPaymentMethod === method.value;
+                      return (
+                        <button
+                          key={method.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          onClick={() => setSelectedPaymentMethod(method.value)}
+                          className={`min-h-[44px] px-2.5 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-200'
+                              : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                          }`}
+                        >
+                          {method.icon}
+                          <span>{method.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Box de Confirmação da Regra de Negócio Solicitada */}
+                <div className="p-3 rounded-xl bg-teal-50/70 border border-teal-200 space-y-2">
+                  <div className="flex justify-between items-center text-teal-950 font-semibold">
+                    <span>Total a registrar em Recebidos:</span>
+                    <span className="font-extrabold font-mono text-sm text-teal-900">
+                      R$ {paidVal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[11px] text-teal-900">
+                    <span>Forma de Pagamento:</span>
+                    <span className="font-bold px-2 py-0.5 rounded bg-white border border-teal-200 text-teal-900">
+                      {selectedPaymentMethod}
+                    </span>
+                  </div>
+                  {discountVal > 0 && (
+                    <div className="flex justify-between items-center text-[11px] text-amber-800">
+                      <span>Desconto Concedido:</span>
+                      <span className="font-mono font-bold">- R$ {discountVal.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="pt-2 border-t border-teal-200/70 text-[11px] text-teal-900 leading-relaxed">
+                    <strong>Regra da Comissão:</strong> A remuneração do professor ({commPct}%) é apurada sobre o <strong>valor integral contratado de R$ {fee.toFixed(2)}</strong> (= <strong>R$ {commVal.toFixed(2)}</strong>), garantindo a integridade dos repasses.
+                  </div>
                 </div>
 
               </div>

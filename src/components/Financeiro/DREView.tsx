@@ -665,7 +665,14 @@ export const DREView: React.FC<DREViewProps> = ({
                             R$ {paid.toFixed(2)}
                           </td>
                           <td className="p-2.5 text-zinc-500 font-mono">
-                            {st.enrollment?.paymentDate ? st.enrollment.paymentDate.split('-').reverse().join('/') : 'Em dia'}
+                            <div>
+                              {st.enrollment?.paymentDate ? st.enrollment.paymentDate.split('-').reverse().join('/') : 'Em dia'}
+                            </div>
+                            {st.enrollment?.paymentMethod && (
+                              <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold bg-teal-50 text-teal-800 border border-teal-200/70">
+                                {st.enrollment.paymentMethod}
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );

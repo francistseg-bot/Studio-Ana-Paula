@@ -34,7 +34,8 @@ import {
   StudioOperatingConfig,
   Expense,
   ExpenseCategory,
-  MonthlyCommissionClosing
+  MonthlyCommissionClosing,
+  PaymentMethod
 } from './types/studio';
 
 import { 
@@ -452,7 +453,12 @@ export default function App() {
     }
   }, []);
 
-  const handleTogglePaymentStatus = (studentId: string, paidAmount?: number, paymentDate?: string) => {
+  const handleTogglePaymentStatus = (
+    studentId: string,
+    paidAmount?: number,
+    paymentDate?: string,
+    paymentMethod?: PaymentMethod
+  ) => {
     let studentToSave: Student | null = null;
     setStudents((prev) =>
       prev.map((s) => {
@@ -462,6 +468,7 @@ export default function App() {
           let finalPaidAmount: number | undefined = undefined;
           let finalPaymentDate: string | undefined = undefined;
           let discount: number | undefined = undefined;
+          let finalPaymentMethod: PaymentMethod | undefined = undefined;
 
           if (paidAmount !== undefined) {
             // Efetivação explícita de baixa (com ou sem desconto)
@@ -469,6 +476,7 @@ export default function App() {
             finalPaidAmount = paidAmount;
             finalPaymentDate = paymentDate || new Date().toISOString().split('T')[0];
             discount = Math.max(0, s.enrollment.monthlyFee - paidAmount);
+            finalPaymentMethod = paymentMethod || s.enrollment.paymentMethod || 'Pix';
           } else {
             // Alternância manual simples de status
             nextStatus = isCurrentlyPaid ? 'atrasado' : 'em_dia';
@@ -476,11 +484,13 @@ export default function App() {
               finalPaidAmount = s.enrollment.effectivePaidAmount ?? s.enrollment.monthlyFee;
               finalPaymentDate = s.enrollment.paymentDate || new Date().toISOString().split('T')[0];
               discount = Math.max(0, s.enrollment.monthlyFee - finalPaidAmount);
+              finalPaymentMethod = paymentMethod || s.enrollment.paymentMethod;
             } else {
               // Estornado para em atraso
               finalPaidAmount = undefined;
               finalPaymentDate = undefined;
               discount = undefined;
+              finalPaymentMethod = undefined;
             }
           }
 
@@ -492,6 +502,7 @@ export default function App() {
               effectivePaidAmount: finalPaidAmount,
               paymentDate: finalPaymentDate,
               discountAmount: discount,
+              paymentMethod: finalPaymentMethod,
             },
           };
           studentToSave = updated;
@@ -511,18 +522,21 @@ export default function App() {
       let finalPaidAmount: number | undefined = undefined;
       let finalPaymentDate: string | undefined = undefined;
       let discount: number | undefined = undefined;
+      let finalPaymentMethod: PaymentMethod | undefined = undefined;
 
       if (paidAmount !== undefined) {
         nextStatus = 'em_dia';
         finalPaidAmount = paidAmount;
         finalPaymentDate = paymentDate || new Date().toISOString().split('T')[0];
         discount = Math.max(0, selectedStudent.enrollment.monthlyFee - paidAmount);
+        finalPaymentMethod = paymentMethod || selectedStudent.enrollment.paymentMethod || 'Pix';
       } else {
         nextStatus = isCurrentlyPaid ? 'atrasado' : 'em_dia';
         if (nextStatus === 'em_dia') {
           finalPaidAmount = selectedStudent.enrollment.effectivePaidAmount ?? selectedStudent.enrollment.monthlyFee;
           finalPaymentDate = selectedStudent.enrollment.paymentDate || new Date().toISOString().split('T')[0];
           discount = Math.max(0, selectedStudent.enrollment.monthlyFee - finalPaidAmount);
+          finalPaymentMethod = paymentMethod || selectedStudent.enrollment.paymentMethod;
         }
       }
 
@@ -534,6 +548,7 @@ export default function App() {
           effectivePaidAmount: finalPaidAmount,
           paymentDate: finalPaymentDate,
           discountAmount: discount,
+          paymentMethod: finalPaymentMethod,
         },
       });
     }
@@ -958,7 +973,9 @@ export default function App() {
             <ContasAReceberView
               students={students}
               instructors={instructors}
-              onTogglePaid={(studentId, paidAmount, paymentDate) => handleTogglePaymentStatus(studentId, paidAmount, paymentDate)}
+              onTogglePaid={(studentId, paidAmount, paymentDate, paymentMethod) =>
+                handleTogglePaymentStatus(studentId, paidAmount, paymentDate, paymentMethod)
+              }
               onUpdateFee={(studentId, newFee, dueDay) => {
                 setStudents(prev => prev.map(s => {
                   if (s.id === studentId && s.enrollment) {

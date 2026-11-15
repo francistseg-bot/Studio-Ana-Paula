@@ -26,6 +26,8 @@ export interface Modality {
   active: boolean;
 }
 
+export type PaymentMethod = 'Pix' | 'Dinheiro' | 'Débito' | 'Crédito';
+
 export interface Enrollment {
   modalityId: string;
   modalityName: string;
@@ -41,6 +43,7 @@ export interface Enrollment {
   effectivePaidAmount?: number; // Valor efetivamente recebido após eventual desconto
   paymentDate?: string;         // Data efetiva da baixa do pagamento
   discountAmount?: number;      // Valor do desconto concedido (monthlyFee - effectivePaidAmount)
+  paymentMethod?: PaymentMethod; // Forma de pagamento registrada na baixa
 }
 
 export interface CompanyData {

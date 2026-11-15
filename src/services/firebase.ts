@@ -98,7 +98,7 @@ export async function saveDocument<T extends { id: string }>(
   try {
     const cleanItem = sanitizeForFirestore(item);
     const docRef = doc(db, collectionName, item.id);
-    await setDoc(docRef, cleanItem, { merge: true });
+    await setDoc(docRef, cleanItem);
   } catch (err) {
     console.error(`[Firebase] Erro ao salvar em ${collectionName}/${item.id}:`, err);
     throw err;
@@ -114,7 +114,7 @@ export async function saveMultipleDocuments<T extends { id: string }>(
     for (const item of items) {
       const cleanItem = sanitizeForFirestore(item);
       const docRef = doc(db, collectionName, item.id);
-      await setDoc(docRef, cleanItem, { merge: true });
+      await setDoc(docRef, cleanItem);
     }
   } catch (err) {
     console.error(`[Firebase] Erro ao salvar lote em ${collectionName}:`, err);

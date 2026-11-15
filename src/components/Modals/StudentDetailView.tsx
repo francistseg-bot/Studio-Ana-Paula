@@ -261,6 +261,11 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
                     Quitado com desconto: R$ {student.enrollment.effectivePaidAmount.toFixed(2)} (-R$ {(student.enrollment.monthlyFee - student.enrollment.effectivePaidAmount).toFixed(2)})
                   </span>
                 )}
+                {student.enrollment.paymentStatus === 'em_dia' && student.enrollment.paymentMethod && (
+                  <span className="inline-block text-[10px] text-teal-800 bg-white border border-teal-200 px-1.5 py-0.5 rounded font-semibold mt-1">
+                    Forma de pgto: {student.enrollment.paymentMethod}
+                  </span>
+                )}
               </div>
             </div>
 
