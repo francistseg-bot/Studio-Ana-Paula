@@ -47,6 +47,7 @@ import {
 } from '../../utils/agendaProjection';
 import {
   canViewMultipleAgendas,
+  canViewRevenueAmounts,
   filterStudentsForUser,
   resolveUserInstructor
 } from '../../utils/permissions';
@@ -83,6 +84,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
   // Escopo de agenda do usuário (múltiplas agendas vs apenas própria agenda)
   const allowMultipleAgendas = !currentUser || canViewMultipleAgendas(currentUser);
+  const canViewRevenue = !currentUser || canViewRevenueAmounts(currentUser);
   const ownInstructor = currentUser ? resolveUserInstructor(currentUser, instructors) : null;
 
   // Filter by instructor ('all' or specific instructorId) (Requested by Francis)
@@ -544,7 +546,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                         {instructor.name}
                       </h3>
                       <span className="text-[10px] text-zinc-400 font-mono">
-                        {instructor.councilNumber} · Comiss.: {instructor.commissionPercentage}%
+                        {instructor.councilNumber}
+                        {canViewRevenue ? ` · Comiss.: ${instructor.commissionPercentage}%` : ''}
                       </span>
                     </div>
                   </div>

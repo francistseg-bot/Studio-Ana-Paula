@@ -41,6 +41,7 @@ interface AlunosViewProps {
   companyData: CompanyData;
   operatingConfig: StudioOperatingConfig;
   initialFilter?: { status?: 'ativo' | 'inativo'; paymentStatus?: 'em_dia' | 'atrasado' };
+  canViewFinancialInfo?: boolean;
   onAddStudent: (student: Student) => void;
   onUpdateStudent: (student: Student) => void;
   onDeleteStudent: (studentId: string) => void;
@@ -55,6 +56,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
   companyData,
   operatingConfig,
   initialFilter,
+  canViewFinancialInfo = true,
   onAddStudent,
   onUpdateStudent,
   onDeleteStudent,
@@ -343,7 +345,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
     const matchesStatus = statusFilter === 'all' || s.status === statusFilter;
 
     let matchesPayment = true;
-    if (paymentFilter !== 'all') {
+    if (canViewFinancialInfo && paymentFilter !== 'all') {
       if (!s.enrollment) {
         matchesPayment = false;
       } else {
@@ -365,13 +367,17 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-teal-700 mb-1">
             <Users className="w-4 h-4" />
-            <span>2.4 Cadastros / Alunos, Fotos & Contrato</span>
+            <span>
+              {canViewFinancialInfo ? '2.4 Cadastros / Alunos, Fotos & Contrato' : '2.4 Cadastros / Alunos & Matrículas'}
+            </span>
           </div>
           <h2 className="text-xl font-bold text-zinc-900">
-            Cadastro de Alunos & Emissão de Contratos
+            {canViewFinancialInfo ? 'Cadastro de Alunos & Emissão de Contratos' : 'Cadastro de Alunos & Grade'}
           </h2>
           <p className="text-xs text-zinc-500">
-            Ficha cadastral com endereço, e-mail, fotos anexadas e emissão de contrato padrão com 1 clique
+            {canViewFinancialInfo
+              ? 'Ficha cadastral com endereço, e-mail, fotos anexadas e emissão de contrato padrão com 1 clique'
+              : 'Ficha cadastral com endereço, e-mail, fotos anexadas e horários vinculados'}
           </p>
         </div>
 
@@ -431,40 +437,42 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
           </div>
 
           {/* Payment Status Filter */}
-          <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-xl">
-            <button
-              onClick={() => setPaymentFilter('all')}
-              className={`px-2.5 py-1 rounded-lg font-medium ${
-                paymentFilter === 'all' ? 'bg-white text-zinc-900 shadow-2xs font-bold' : 'text-zinc-600'
-              }`}
-            >
-              Financeiro: Todos
-            </button>
-            <button
-              onClick={() => setPaymentFilter('em_dia')}
-              className={`px-2.5 py-1 rounded-lg font-medium ${
-                paymentFilter === 'em_dia' ? 'bg-white text-emerald-800 shadow-2xs font-bold' : 'text-zinc-600'
-              }`}
-            >
-              Pagos
-            </button>
-            <button
-              onClick={() => setPaymentFilter('pendente')}
-              className={`px-2.5 py-1 rounded-lg font-medium ${
-                paymentFilter === 'pendente' ? 'bg-white text-amber-800 shadow-2xs font-bold' : 'text-zinc-600'
-              }`}
-            >
-              A Vencer
-            </button>
-            <button
-              onClick={() => setPaymentFilter('atrasado')}
-              className={`px-2.5 py-1 rounded-lg font-medium ${
-                paymentFilter === 'atrasado' ? 'bg-white text-rose-800 shadow-2xs font-bold' : 'text-zinc-600'
-              }`}
-            >
-              Em Atraso
-            </button>
-          </div>
+          {canViewFinancialInfo && (
+            <div className="flex items-center gap-1 bg-zinc-100 p-1 rounded-xl">
+              <button
+                onClick={() => setPaymentFilter('all')}
+                className={`px-2.5 py-1 rounded-lg font-medium ${
+                  paymentFilter === 'all' ? 'bg-white text-zinc-900 shadow-2xs font-bold' : 'text-zinc-600'
+                }`}
+              >
+                Financeiro: Todos
+              </button>
+              <button
+                onClick={() => setPaymentFilter('em_dia')}
+                className={`px-2.5 py-1 rounded-lg font-medium ${
+                  paymentFilter === 'em_dia' ? 'bg-white text-emerald-800 shadow-2xs font-bold' : 'text-zinc-600'
+                }`}
+              >
+                Pagos
+              </button>
+              <button
+                onClick={() => setPaymentFilter('pendente')}
+                className={`px-2.5 py-1 rounded-lg font-medium ${
+                  paymentFilter === 'pendente' ? 'bg-white text-amber-800 shadow-2xs font-bold' : 'text-zinc-600'
+                }`}
+              >
+                A Vencer
+              </button>
+              <button
+                onClick={() => setPaymentFilter('atrasado')}
+                className={`px-2.5 py-1 rounded-lg font-medium ${
+                  paymentFilter === 'atrasado' ? 'bg-white text-rose-800 shadow-2xs font-bold' : 'text-zinc-600'
+                }`}
+              >
+                Em Atraso
+              </button>
+            </div>
+          )}
 
         </div>
 
@@ -480,14 +488,18 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                 <th className="px-4 py-3">Endereço & E-mail</th>
                 <th className="px-4 py-3">Matrícula & Horário</th>
                 <th className="px-4 py-3">Professor</th>
-                <th className="px-4 py-3 text-center">Mensalidade</th>
-                <th className="px-4 py-3 text-right">Contrato & Ações</th>
+                {canViewFinancialInfo && (
+                  <th className="px-4 py-3 text-center">Mensalidade</th>
+                )}
+                <th className="px-4 py-3 text-right">
+                  {canViewFinancialInfo ? 'Contrato & Ações' : 'Ações'}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-zinc-400 italic">
+                  <td colSpan={canViewFinancialInfo ? 6 : 5} className="px-4 py-8 text-center text-zinc-400 italic">
                     Nenhum aluno encontrado com os filtros selecionados.
                   </td>
                 </tr>
@@ -619,30 +631,32 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                       </td>
 
                       {/* Monthly Fee & Status */}
-                      <td className="px-4 py-3.5 text-center">
-                        {student.enrollment ? (
-                          <div>
-                            <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                              isOverdue
-                                ? 'bg-rose-100 text-rose-800'
-                                : isUpcoming
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-emerald-100 text-emerald-800'
-                            }`}>
-                              {isOverdue
-                                ? 'Vencida'
-                                : isUpcoming
-                                ? `A Vencer (Dia ${student.enrollment.dueDay})`
-                                : 'Em Dia / Pago'}
-                            </span>
-                            <div className="text-[11px] font-mono text-zinc-600 mt-0.5">
-                              R$ {student.enrollment.monthlyFee.toFixed(2)}
+                      {canViewFinancialInfo && (
+                        <td className="px-4 py-3.5 text-center">
+                          {student.enrollment ? (
+                            <div>
+                              <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold ${
+                                isOverdue
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : isUpcoming
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}>
+                                {isOverdue
+                                  ? 'Vencida'
+                                  : isUpcoming
+                                  ? `A Vencer (Dia ${student.enrollment.dueDay})`
+                                  : 'Em Dia / Pago'}
+                              </span>
+                              <div className="text-[11px] font-mono text-zinc-600 mt-0.5">
+                                R$ {student.enrollment.monthlyFee.toFixed(2)}
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <span className="text-zinc-400 text-[11px] italic">Sem plano</span>
-                        )}
-                      </td>
+                          ) : (
+                            <span className="text-zinc-400 text-[11px] italic">Sem plano</span>
+                          )}
+                        </td>
+                      )}
 
                       {/* Contract Button + Actions */}
                       <td className="px-4 py-3.5 text-right">
@@ -670,14 +684,16 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                           )}
 
                           {/* BOTÃO EMITIR CONTRATO (Requested by user) */}
-                          <button
-                            onClick={() => setStudentToContract(student)}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-semibold text-[11px] transition-colors border border-teal-200/60 shadow-2xs"
-                            title="Emitir Contrato com base no modelo padrão"
-                          >
-                            <FileCheck className="w-3.5 h-3.5 text-teal-700" />
-                            <span>Contrato</span>
-                          </button>
+                          {canViewFinancialInfo && (
+                            <button
+                              onClick={() => setStudentToContract(student)}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 font-semibold text-[11px] transition-colors border border-teal-200/60 shadow-2xs"
+                              title="Emitir Contrato com base no modelo padrão"
+                            >
+                              <FileCheck className="w-3.5 h-3.5 text-teal-700" />
+                              <span>Contrato</span>
+                            </button>
+                          )}
 
                           {/* BOTÃO EDITAR ALUNO */}
                           <button
@@ -707,14 +723,14 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
 
                           <a
                             href={`https://wa.me/55${student.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
-                              isOverdue
+                              canViewFinancialInfo && isOverdue
                                 ? `Olá ${student.name.split(' ')[0]}! Aqui é do Studio Ana Paula Rodrigues. Passando para lembrar da sua mensalidade deste mês no valor de R$ ${student.enrollment?.monthlyFee.toFixed(2)}.`
                                 : `Olá ${student.name.split(' ')[0]}! Tudo bem? Aqui é do Studio Ana Paula Rodrigues Pilates e Fisioterapia.`
                             )}`}
                             target="_blank"
                             rel="noreferrer"
                             className={`p-1.5 rounded-lg transition-colors ${
-                              isOverdue
+                              canViewFinancialInfo && isOverdue
                                 ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
                                 : 'bg-teal-50 text-teal-700 hover:bg-teal-100'
                             }`}
@@ -1010,7 +1026,9 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         >
                           {modalities.map((mod) => (
                             <option key={mod.id} value={mod.id}>
-                              {mod.name} - R$ {mod.price.toFixed(2)} {mod.billingType === 'pacote' ? `(Pacote: ${mod.packageClasses || 10} aulas)` : mod.billingType === 'reposicao' ? '(Reposição)' : ''}
+                              {mod.name}
+                              {canViewFinancialInfo ? ` - R$ ${mod.price.toFixed(2)}` : ''}{' '}
+                              {mod.billingType === 'pacote' ? `(Pacote: ${mod.packageClasses || 10} aulas)` : mod.billingType === 'reposicao' ? '(Reposição)' : ''}
                             </option>
                           ))}
                         </select>
@@ -1027,7 +1045,8 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         >
                           {instructors.map((inst) => (
                             <option key={inst.id} value={inst.id}>
-                              {inst.name} ({inst.councilNumber}) - Com.: {inst.commissionPercentage}%
+                              {inst.name} ({inst.councilNumber})
+                              {canViewFinancialInfo ? ` - Com.: ${inst.commissionPercentage}%` : ''}
                             </option>
                           ))}
                         </select>
@@ -1076,7 +1095,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className={`grid grid-cols-1 sm:grid-cols-2 ${canViewFinancialInfo ? 'lg:grid-cols-4' : 'lg:grid-cols-2'} gap-3`}>
                       <div>
                         <label className="text-zinc-700 font-semibold block mb-1">
                           Data de Início *
@@ -1126,68 +1145,72 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         </span>
                       </div>
 
-                      <div>
-                        <label className="text-zinc-700 font-semibold block mb-1">
-                          Dia de Vencimento *
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={31}
-                          required
-                          value={dueDayInput}
-                          onChange={(e) => setDueDayInput(e.target.value)}
-                          onBlur={() => {
-                            const parsed = parseInt(dueDayInput, 10);
-                            if (isNaN(parsed) || parsed < 1) setDueDayInput('1');
-                            else if (parsed > 31) setDueDayInput('31');
-                          }}
-                          placeholder="Ex: 10"
-                          className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-teal-600"
-                        />
-                        <span className="text-[10px] text-zinc-500 block mt-1">
-                          Edição manual livre (dia 1 a 31)
-                        </span>
-                      </div>
-
-                      <div>
-                        <label className="text-zinc-700 font-semibold block mb-1">
-                          Status Financeiro Inicial
-                        </label>
-                        <select
-                          value={paymentStatus}
-                          onChange={(e) => setPaymentStatus(e.target.value as 'em_dia' | 'pendente' | 'atrasado')}
-                          className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 focus:outline-none focus:ring-1 focus:ring-teal-600 font-medium"
-                        >
-                          <option value="pendente">A Vencer / Aguardando Pagamento</option>
-                          <option value="em_dia">Em Dia (Já Pago)</option>
-                          <option value="atrasado">Em Atraso / Vencido</option>
-                        </select>
-                        {(() => {
-                          const previewDueIso = getCycleDueDateIso(getParsedDueDay(), startDate);
-                          const todayIso = toLocalIsoDate(new Date());
-                          const dueFormatted = previewDueIso.split('-').reverse().join('/');
-                          if (paymentStatus === 'em_dia') {
-                            return (
-                              <span className="text-[10px] text-emerald-700 block mt-1 leading-tight">
-                                Mensalidade será marcada como <strong>Paga</strong>.
-                              </span>
-                            );
-                          }
-                          if (todayIso > previewDueIso) {
-                            return (
-                              <span className="text-[10px] text-rose-700 block mt-1 leading-tight">
-                                Venc. {dueFormatted} já passou de Hoje — entrará como <strong>Vencido</strong> em 4.2 Contas a Receber.
-                              </span>
-                            );
-                          }
-                          return (
-                            <span className="text-[10px] text-amber-800 block mt-1 leading-tight">
-                              Venc. {dueFormatted} (&ge; Hoje) — ficará como <strong>A Vencer</strong> em 4.2 Contas a Receber até passar a data.
+                      {canViewFinancialInfo && (
+                        <>
+                          <div>
+                            <label className="text-zinc-700 font-semibold block mb-1">
+                              Dia de Vencimento *
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={31}
+                              required
+                              value={dueDayInput}
+                              onChange={(e) => setDueDayInput(e.target.value)}
+                              onBlur={() => {
+                                const parsed = parseInt(dueDayInput, 10);
+                                if (isNaN(parsed) || parsed < 1) setDueDayInput('1');
+                                else if (parsed > 31) setDueDayInput('31');
+                              }}
+                              placeholder="Ex: 10"
+                              className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono font-bold focus:outline-none focus:ring-1 focus:ring-teal-600"
+                            />
+                            <span className="text-[10px] text-zinc-500 block mt-1">
+                              Edição manual livre (dia 1 a 31)
                             </span>
-                          );
-                        })()}
-                      </div>
+                          </div>
+
+                          <div>
+                            <label className="text-zinc-700 font-semibold block mb-1">
+                              Status Financeiro Inicial
+                            </label>
+                            <select
+                              value={paymentStatus}
+                              onChange={(e) => setPaymentStatus(e.target.value as 'em_dia' | 'pendente' | 'atrasado')}
+                              className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 focus:outline-none focus:ring-1 focus:ring-teal-600 font-medium"
+                            >
+                              <option value="pendente">A Vencer / Aguardando Pagamento</option>
+                              <option value="em_dia">Em Dia (Já Pago)</option>
+                              <option value="atrasado">Em Atraso / Vencido</option>
+                            </select>
+                            {(() => {
+                              const previewDueIso = getCycleDueDateIso(getParsedDueDay(), startDate);
+                              const todayIso = toLocalIsoDate(new Date());
+                              const dueFormatted = previewDueIso.split('-').reverse().join('/');
+                              if (paymentStatus === 'em_dia') {
+                                return (
+                                  <span className="text-[10px] text-emerald-700 block mt-1 leading-tight">
+                                    Mensalidade será marcada como <strong>Paga</strong>.
+                                  </span>
+                                );
+                              }
+                              if (todayIso > previewDueIso) {
+                                return (
+                                  <span className="text-[10px] text-rose-700 block mt-1 leading-tight">
+                                    Venc. {dueFormatted} já passou de Hoje — entrará como <strong>Vencido</strong> em 4.2 Contas a Receber.
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="text-[10px] text-amber-800 block mt-1 leading-tight">
+                                  Venc. {dueFormatted} (&ge; Hoje) — ficará como <strong>A Vencer</strong> em 4.2 Contas a Receber até passar a data.
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1310,7 +1333,9 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
               {/* Botões do Modal */}
               <div className="pt-3 border-t border-zinc-100 flex items-center justify-between">
                 <span className="text-[11px] text-zinc-500">
-                  O contrato poderá ser emitido com 1 clique após salvar.
+                  {canViewFinancialInfo
+                    ? 'O contrato poderá ser emitido com 1 clique após salvar.'
+                    : 'Os horários serão sincronizados com 3. Agenda após salvar.'}
                 </span>
                 <div className="flex gap-2">
                   <button
@@ -1342,7 +1367,9 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
               Vincular Matrícula para {matriculaModalStudent.name}
             </h3>
             <p className="text-zinc-500 mb-4">
-              Selecione a modalidade, dias, horário de 3. Agenda e dia de vencimento
+              {canViewFinancialInfo
+                ? 'Selecione a modalidade, dias, horário de 3. Agenda e dia de vencimento'
+                : 'Selecione a modalidade, dias e horário de 3. Agenda'}
             </p>
 
             <div className="space-y-3">
@@ -1355,7 +1382,9 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                 >
                   {modalities.map(m => (
                     <option key={m.id} value={m.id}>
-                      {m.name} - R$ {m.price.toFixed(2)} {m.billingType === 'pacote' ? `(Pacote: ${m.packageClasses || 10} aulas)` : ''}
+                      {m.name}
+                      {canViewFinancialInfo ? ` - R$ ${m.price.toFixed(2)}` : ''}{' '}
+                      {m.billingType === 'pacote' ? `(Pacote: ${m.packageClasses || 10} aulas)` : ''}
                     </option>
                   ))}
                 </select>
@@ -1405,7 +1434,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className={`grid grid-cols-1 ${canViewFinancialInfo ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-3`}>
                 <div>
                   <label className="text-zinc-700 font-semibold block mb-1">Data de Início *</label>
                   <input
@@ -1439,23 +1468,25 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                     {scheduleInfo.windowSummary}
                   </span>
                 </div>
-                <div>
-                  <label className="text-zinc-700 font-semibold block mb-1">Vencimento (1 a 31)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={31}
-                    value={dueDayInput}
-                    onChange={(e) => setDueDayInput(e.target.value)}
-                    onBlur={() => {
-                      const parsed = parseInt(dueDayInput, 10);
-                      if (isNaN(parsed) || parsed < 1) setDueDayInput('1');
-                      else if (parsed > 31) setDueDayInput('31');
-                    }}
-                    placeholder="Ex: 10"
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono font-bold"
-                  />
-                </div>
+                {canViewFinancialInfo && (
+                  <div>
+                    <label className="text-zinc-700 font-semibold block mb-1">Vencimento (1 a 31)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={31}
+                      value={dueDayInput}
+                      onChange={(e) => setDueDayInput(e.target.value)}
+                      onBlur={() => {
+                        const parsed = parseInt(dueDayInput, 10);
+                        if (isNaN(parsed) || parsed < 1) setDueDayInput('1');
+                        else if (parsed > 31) setDueDayInput('31');
+                      }}
+                      placeholder="Ex: 10"
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono font-bold"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="pt-3 border-t border-zinc-100 flex justify-end gap-2">

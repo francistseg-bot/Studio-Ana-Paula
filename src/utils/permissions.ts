@@ -107,6 +107,18 @@ export function hasAnyPermission(
   return requiredPermissions.some((perm) => userPerms.includes(perm));
 }
 
+export function canViewRevenueAmounts(user?: UserAccount | null): boolean {
+  if (!user || user.status !== 'Ativo') return false;
+  if (hasFullAccess(user)) return true;
+  return hasAnyPermission(user, ['Visualizar Financeiro', 'Visualizar DRE']);
+}
+
+export function canCloseInstructorCommissions(user?: UserAccount | null): boolean {
+  if (!user || user.status !== 'Ativo') return false;
+  if (hasFullAccess(user)) return true;
+  return hasAnyPermission(user, ['Fechar Comissões', 'Visualizar Financeiro', 'Visualizar DRE']);
+}
+
 export function canViewMultipleAgendas(user?: UserAccount | null): boolean {
   if (!user || user.status !== 'Ativo') return false;
   if (hasFullAccess(user)) return true;

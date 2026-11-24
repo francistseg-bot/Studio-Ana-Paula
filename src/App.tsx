@@ -57,7 +57,9 @@ import { toLocalIsoDate } from './utils/agendaProjection';
 import { getCycleDueDateIso, getEffectiveBillingStatus } from './utils/billingStatus';
 import {
   canAccessTab,
+  canCloseInstructorCommissions,
   canViewMultipleAgendas,
+  canViewRevenueAmounts,
   filterStudentsForUser,
   getDefaultTabForUser,
   hasAnyPermission,
@@ -835,6 +837,8 @@ export default function App() {
   };
 
   const allowMultipleAgendas = !currentUser || canViewMultipleAgendas(currentUser);
+  const canViewRevenue = canViewRevenueAmounts(currentUser);
+  const canManageClosings = canCloseInstructorCommissions(currentUser);
   const ownInstructor = currentUser ? resolveUserInstructor(currentUser, instructors) : null;
   const scopedStudents = allowMultipleAgendas
     ? students
@@ -966,6 +970,10 @@ export default function App() {
                 <DashboardOverview
                   students={students}
                   instructors={instructors}
+                  agendaSessions={agendaSessions}
+                  modalities={modalities}
+                  commissionClosings={commissionClosings}
+                  commissionOverrides={commissionOverrides}
                   currentUser={currentUser}
                   onNavigate={handleNavigate}
                   onSelectStudentDetail={(student) => setSelectedStudent(student)}
@@ -1012,6 +1020,7 @@ export default function App() {
               companyData={companyData}
               operatingConfig={operatingConfig}
               initialFilter={alunosFilter}
+              canViewFinancialInfo={canViewRevenue}
               onAddStudent={handleAddStudent}
               onUpdateStudent={handleUpdateStudent}
               onDeleteStudent={handleDeleteStudent}
@@ -1023,12 +1032,14 @@ export default function App() {
           {currentTab === 'cadastros-professores' && (
             <ProfessoresView
               instructors={scopedInstructors}
-              students={scopedStudents}
+              students={students}
               agendaSessions={scopedAgendaSessions}
               modalities={modalities}
               commissionClosings={commissionClosings}
               commissionOverrides={commissionOverrides}
               isRestrictedInstructor={!allowMultipleAgendas}
+              canViewRevenue={canViewRevenue}
+              canManageClosings={canManageClosings}
               onSaveCommissionClosing={handleSaveCommissionClosing}
               onReopenCommissionClosing={handleReopenCommissionClosing}
               onAddInstructor={handleAddInstructor}
@@ -1199,6 +1210,7 @@ export default function App() {
           onTogglePaymentStatus={handleTogglePaymentStatus}
           onToggleStudentStatus={handleToggleStudentStatus}
           canManagePayments={hasAnyPermission(currentUser, ['Visualizar Financeiro'])}
+          canViewFinancialInfo={canViewRevenue}
           onEmitContract={(student) => {
             setSelectedStudent(null);
             setContractStudent(student);

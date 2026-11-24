@@ -12,21 +12,37 @@ import {
   Calendar,
   Layers,
   Heart,
-  ChevronRight
+  ChevronRight,
+  DollarSign
 } from 'lucide-react';
-import { Student, MainNavigation, UserAccount, Instructor } from '../types/studio';
+import {
+  Student,
+  MainNavigation,
+  UserAccount,
+  Instructor,
+  AgendaClassSession,
+  Modality,
+  MonthlyCommissionClosing,
+  CommissionOverridesMap,
+} from '../types/studio';
 import { getEffectiveBillingStatus } from '../utils/billingStatus';
 import {
   canAccessTab,
   canViewMultipleAgendas,
+  canViewRevenueAmounts,
   filterStudentsForUser,
   hasAnyPermission,
   resolveUserInstructor,
 } from '../utils/permissions';
+import { calculateInstructorCommission } from '../utils/commissionCalculator';
 
 interface DashboardOverviewProps {
   students: Student[];
   instructors?: Instructor[];
+  agendaSessions?: AgendaClassSession[];
+  modalities?: Modality[];
+  commissionClosings?: MonthlyCommissionClosing[];
+  commissionOverrides?: CommissionOverridesMap;
   currentUser?: UserAccount | null;
   onNavigate: (tab: MainNavigation, filter?: { status?: 'ativo' | 'inativo'; paymentStatus?: 'em_dia' | 'atrasado' }) => void;
   onSelectStudentDetail: (student: Student) => void;
@@ -35,6 +51,10 @@ interface DashboardOverviewProps {
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   students,
   instructors = [],
+  agendaSessions = [],
+  modalities = [],
+  commissionClosings = [],
+  commissionOverrides = {},
   currentUser,
   onNavigate,
   onSelectStudentDetail,
@@ -51,11 +71,32 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const canModalidades = canAccessTab(currentUser, 'cadastros-modalidades');
   const canUsuarios = canAccessTab(currentUser, 'cadastros-usuarios');
   const canFinanceiro = hasAnyPermission(currentUser, ['Visualizar Financeiro']);
+  const canViewRevenue = canViewRevenueAmounts(currentUser);
   const hasAnyQuickShortcut = canAlunos || canProfessores || canModalidades || canUsuarios;
   // Check birthdays today
   const today = new Date();
   const currentMonth = String(today.getMonth() + 1).padStart(2, '0');
   const currentDay = String(today.getDate()).padStart(2, '0');
+
+  const showOwnCommissionCard = !canViewRevenue && Boolean(ownInstructor);
+  const ownCommissionCalc =
+    showOwnCommissionCard && ownInstructor
+      ? calculateInstructorCommission({
+          instructor: ownInstructor,
+          month: today.getMonth() + 1,
+          year: today.getFullYear(),
+          students,
+          agendaSessions,
+          modalities,
+          commissionClosings,
+          commissionOverrides,
+        })
+      : null;
+
+  const currentMonthLabel = new Intl.DateTimeFormat('pt-BR', {
+    month: 'long',
+    year: 'numeric',
+  }).format(today);
 
   const birthdayStudents = visibleStudents.filter((s) => {
     if (!s.birthDate) return false;
@@ -84,6 +125,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const totalUpToDateAmount = upToDateStudents.reduce(
     (acc, s) => acc + (s.enrollment?.monthlyFee || 0), 0
   );
+
+  const visibleKpiCount = 3 + (canFinanceiro ? 2 : 0) + (ownCommissionCalc ? 1 : 0);
 
   const [birthdayModalOpen, setBirthdayModalOpen] = useState(false);
 
@@ -147,11 +190,19 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             Balões Interativos de Acesso Rápido (Clique para abrir a raiz das informações)
           </h2>
           <span className="text-[11px] text-teal-700 font-medium">
-            5 Indicadores Chave
+            {visibleKpiCount} Indicadores Chave
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        <div
+          className={`grid grid-cols-1 sm:grid-cols-2 ${
+            visibleKpiCount === 5
+              ? 'lg:grid-cols-5'
+              : visibleKpiCount === 4
+              ? 'lg:grid-cols-4'
+              : 'lg:grid-cols-3'
+          } gap-3.5`}
+        >
           
           {/* Balão 1: Alunos Ativos */}
           <button
@@ -295,6 +346,40 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             </button>
           )}
 
+          {/* Balão Exclusivo (Professor Restrito): Comissão Estimada do Mês */}
+          {ownCommissionCalc && (
+            <button
+              type="button"
+              disabled={!canProfessores}
+              onClick={() => canProfessores && onNavigate('cadastros-professores')}
+              className={`group relative bg-gradient-to-br from-teal-50 to-emerald-50/60 p-4 rounded-2xl border border-teal-200 shadow-2xs transition-all text-left flex flex-col justify-between ${
+                canProfessores ? 'hover:border-teal-500 cursor-pointer' : 'cursor-default'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between text-xs text-teal-900 mb-2">
+                  <span className="font-semibold">Comissão Estimada do Mês</span>
+                  <div className="w-7 h-7 rounded-lg bg-teal-200/80 text-teal-900 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <DollarSign className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl sm:text-3xl font-extrabold font-mono text-teal-950 tabular-nums">
+                  R$ {ownCommissionCalc.totalFinalCommission.toFixed(2)}
+                </div>
+                <p className="text-[11px] text-teal-800 font-medium mt-1 capitalize">
+                  {currentMonthLabel} · {ownCommissionCalc.isClosed ? 'Fechada' : 'Prévia atual'}
+                </p>
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-teal-200/60 flex items-center justify-between text-[11px] text-teal-900 font-semibold">
+                <span>{canProfessores ? 'Ver detalhamento' : 'Apenas sua comissão'}</span>
+                {canProfessores && (
+                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                )}
+              </div>
+            </button>
+          )}
+
         </div>
       </div>
 
@@ -430,7 +515,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <span className="font-semibold text-zinc-900 block">Pilates Aparelhos 2x/sem</span>
                   <span className="text-[11px] text-zinc-500">Reformer, Cadillac, Chair</span>
                 </div>
-                <span className="font-mono font-bold text-teal-800">R$ 380,00</span>
+                {canViewRevenue && (
+                  <span className="font-mono font-bold text-teal-800">R$ 380,00</span>
+                )}
               </div>
 
               <div className="p-2.5 rounded-lg bg-zinc-50 border border-zinc-100 flex items-center justify-between">
@@ -438,7 +525,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <span className="font-semibold text-zinc-900 block">Pilates Aparelhos 3x/sem</span>
                   <span className="text-[11px] text-zinc-500">Fortalecimento intensivo</span>
                 </div>
-                <span className="font-mono font-bold text-teal-800">R$ 490,00</span>
+                {canViewRevenue && (
+                  <span className="font-mono font-bold text-teal-800">R$ 490,00</span>
+                )}
               </div>
 
               <div className="p-2.5 rounded-lg bg-zinc-50 border border-zinc-100 flex items-center justify-between">
@@ -446,7 +535,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <span className="font-semibold text-zinc-900 block">Pilates Gestacional 2x/sem</span>
                   <span className="text-[11px] text-zinc-500">Pélvico & Lombar</span>
                 </div>
-                <span className="font-mono font-bold text-teal-800">R$ 420,00</span>
+                {canViewRevenue && (
+                  <span className="font-mono font-bold text-teal-800">R$ 420,00</span>
+                )}
               </div>
 
               <div className="p-2.5 rounded-lg bg-zinc-50 border border-zinc-100 flex items-center justify-between">
@@ -454,7 +545,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   <span className="font-semibold text-zinc-900 block">Fisioterapia Ortopédica</span>
                   <span className="text-[11px] text-zinc-500">Tratamento recuperatório</span>
                 </div>
-                <span className="font-mono font-bold text-teal-800">R$ 520,00</span>
+                {canViewRevenue && (
+                  <span className="font-mono font-bold text-teal-800">R$ 520,00</span>
+                )}
               </div>
             </div>
           </div>

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Instructor, Student, AgendaClassSession, Modality, MonthlyCommissionClosing, CommissionOverridesMap } from '../../types/studio';
 import { FecharComissaoModal } from '../Financeiro/FecharComissaoModal';
+import { calculateInstructorCommission } from '../../utils/commissionCalculator';
 
 interface ProfessoresViewProps {
   instructors: Instructor[];
@@ -26,6 +27,8 @@ interface ProfessoresViewProps {
   commissionClosings?: MonthlyCommissionClosing[];
   commissionOverrides?: CommissionOverridesMap;
   isRestrictedInstructor?: boolean;
+  canViewRevenue?: boolean;
+  canManageClosings?: boolean;
   onSaveCommissionClosing?: (closing: MonthlyCommissionClosing) => void;
   onReopenCommissionClosing?: (closingId: string) => void;
   onAddInstructor: (instructor: Instructor) => void;
@@ -42,6 +45,8 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
   commissionClosings = [],
   commissionOverrides = {},
   isRestrictedInstructor = false,
+  canViewRevenue = true,
+  canManageClosings = true,
   onSaveCommissionClosing,
   onReopenCommissionClosing,
   onAddInstructor,
@@ -131,22 +136,26 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
             Professores & Instrutores do Studio
           </h2>
           <p className="text-xs text-zinc-500">
-            Cadastro profissional, registro em conselho (CREFITO/CREF) e cálculo automatizado de comissões sobre as matrículas dos alunos
+            {canViewRevenue
+              ? 'Cadastro profissional, registro em conselho (CREFITO/CREF) e cálculo automatizado de comissões sobre as matrículas dos alunos'
+              : 'Cadastro profissional, alunos vinculados na grade e estimativa de comissão do mês vigente'}
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={() => {
-              setSelectedInstructorForClosing(instructors[0]?.id || '');
-              setIsClosingModalOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-900 font-semibold text-xs transition-colors shadow-2xs"
-            title="Fechar comissão mensal e gerar relatório com alunos atendidos"
-          >
-            <DollarSign className="w-4 h-4 text-teal-700" />
-            <span>Fechamento de Comissões</span>
-          </button>
+          {canManageClosings && (
+            <button
+              onClick={() => {
+                setSelectedInstructorForClosing(instructors[0]?.id || '');
+                setIsClosingModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-900 font-semibold text-xs transition-colors shadow-2xs"
+              title="Fechar comissão mensal e gerar relatório com alunos atendidos"
+            >
+              <DollarSign className="w-4 h-4 text-teal-700" />
+              <span>Fechamento de Comissões</span>
+            </button>
+          )}
 
           {!isRestrictedInstructor && (
             <button
@@ -163,31 +172,31 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
       {/* Instructors & Commissions Calculation Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {instructors.map((inst) => {
-          // Calculate enrolled students for this instructor
+          const now = new Date();
+          const currentMonth = now.getMonth() + 1;
+          const currentYear = now.getFullYear();
+
           const assignedStudents = students.filter(
             s => s.status === 'ativo' && s.enrollment && s.enrollment.instructorId === inst.id
           );
 
-          // Total monthly billing from enrolled students
-          const totalEnrollmentRevenue = assignedStudents.reduce(
-            (acc, s) => acc + (s.enrollment?.monthlyFee || 0), 0
-          );
+          const commissionData = calculateInstructorCommission({
+            instructor: inst,
+            month: currentMonth,
+            year: currentYear,
+            students,
+            agendaSessions,
+            modalities,
+            commissionClosings,
+            commissionOverrides,
+          });
 
-          // Commission calculated based on the registered percentage
-          const estimatedCommission = (totalEnrollmentRevenue * inst.commissionPercentage) / 100;
-
-          // Aulas de reposição atendidas por este professor onde o aluno era de outro professor
-          const replacementSlots = agendaSessions.flatMap(sess => 
-            sess.instructorId === inst.id
-              ? sess.students.filter(slot => slot.isReplacement && slot.originalInstructorId && slot.originalInstructorId !== inst.id)
-              : []
-          );
-
-          const totalReplacementCommission = replacementSlots.reduce(
-            (acc, slot) => acc + (slot.additionalCommissionPaid || 35.00), 0
-          );
-
-          const totalFinalCommission = estimatedCommission + totalReplacementCommission;
+          const totalEnrollmentRevenue = commissionData.revenueGenerated;
+          const estimatedCommission = commissionData.totalMonthlyCommission + commissionData.totalSingleClassesCommission;
+          const totalReplacementCommission = commissionData.totalReplacementCommission;
+          const replacementSlotsCount = commissionData.rows.filter(r => r.type === 'reposicao').length;
+          const totalFinalCommission = commissionData.totalFinalCommission;
+          const isClosedThisMonth = commissionData.isClosed;
 
           return (
             <div
@@ -241,62 +250,86 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
                   </div>
                 )}
 
-                {/* Commission Calculation Panel (Requested by User) */}
+                {/* Commission Calculation Panel */}
                 <div className="p-4 rounded-xl bg-teal-50/50 border border-teal-200/60 space-y-2 text-xs">
-                  <div className="flex items-center justify-between text-teal-950 font-bold border-b border-teal-200/60 pb-1.5">
-                    <span className="flex items-center gap-1">
-                      <Percent className="w-3.5 h-3.5 text-teal-700" />
-                      <span>Comissão Matrículas:</span>
-                    </span>
-                    <span className="font-mono text-base font-extrabold text-teal-800">
-                      {inst.commissionPercentage}%
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-zinc-700">
-                    <span>Alunos vinculados:</span>
-                    <strong className="font-mono font-bold text-zinc-900 tabular-nums">
-                      {assignedStudents.length} alunos
-                    </strong>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-zinc-700">
-                    <span>Faturamento Matrículas:</span>
-                    <strong className="font-mono tabular-nums text-zinc-900">
-                      R$ {totalEnrollmentRevenue.toFixed(2)}
-                    </strong>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-zinc-700">
-                    <span>Comissão sobre Matrículas:</span>
-                    <strong className="font-mono tabular-nums text-zinc-900">
-                      R$ {estimatedCommission.toFixed(2)}
-                    </strong>
-                  </div>
-
-                  {/* ADICIONAL DE REPOSIÇÕES REALIZADAS PARA OUTRO PROFESSOR */}
-                  {totalReplacementCommission > 0 && (
-                    <div className="p-2 rounded-lg bg-purple-100/70 border border-purple-200 text-purple-950 flex items-center justify-between">
-                      <div>
-                        <span className="font-bold block text-[11px]">
-                          + Reposições ({replacementSlots.length} aula{replacementSlots.length > 1 ? 's' : ''}):
+                  {canViewRevenue ? (
+                    <>
+                      <div className="flex items-center justify-between text-teal-950 font-bold border-b border-teal-200/60 pb-1.5">
+                        <span className="flex items-center gap-1">
+                          <Percent className="w-3.5 h-3.5 text-teal-700" />
+                          <span>Comissão Matrículas:</span>
                         </span>
-                        <span className="text-[10px] text-purple-700">
-                          Alunos de outro professor
+                        <span className="font-mono text-base font-extrabold text-teal-800">
+                          {inst.commissionPercentage}%
                         </span>
                       </div>
-                      <span className="font-mono font-extrabold text-purple-900">
-                        + R$ {totalReplacementCommission.toFixed(2)}
-                      </span>
-                    </div>
-                  )}
 
-                  <div className="pt-2 border-t border-teal-200/60 flex items-center justify-between text-xs font-bold text-teal-950">
-                    <span>Comissão Total Estimada:</span>
-                    <span className="font-mono text-base font-extrabold text-teal-900 tabular-nums">
-                      R$ {totalFinalCommission.toFixed(2)}
-                    </span>
-                  </div>
+                      <div className="flex items-center justify-between text-[11px] text-zinc-700">
+                        <span>Alunos vinculados:</span>
+                        <strong className="font-mono font-bold text-zinc-900 tabular-nums">
+                          {assignedStudents.length} alunos
+                        </strong>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-zinc-700">
+                        <span>Faturamento Matrículas:</span>
+                        <strong className="font-mono tabular-nums text-zinc-900">
+                          R$ {totalEnrollmentRevenue.toFixed(2)}
+                        </strong>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-zinc-700">
+                        <span>Comissão sobre Matrículas:</span>
+                        <strong className="font-mono tabular-nums text-zinc-900">
+                          R$ {estimatedCommission.toFixed(2)}
+                        </strong>
+                      </div>
+
+                      {totalReplacementCommission > 0 && (
+                        <div className="p-2 rounded-lg bg-purple-100/70 border border-purple-200 text-purple-950 flex items-center justify-between">
+                          <div>
+                            <span className="font-bold block text-[11px]">
+                              + Reposições ({replacementSlotsCount} aula{replacementSlotsCount > 1 ? 's' : ''}):
+                            </span>
+                            <span className="text-[10px] text-purple-700">
+                              Alunos de outro professor
+                            </span>
+                          </div>
+                          <span className="font-mono font-extrabold text-purple-900">
+                            + R$ {totalReplacementCommission.toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="pt-2 border-t border-teal-200/60 flex items-center justify-between text-xs font-bold text-teal-950">
+                        <span>Comissão Total Estimada:</span>
+                        <span className="font-mono text-base font-extrabold text-teal-900 tabular-nums">
+                          R$ {totalFinalCommission.toFixed(2)}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between text-[11px] text-zinc-700">
+                        <span>Alunos vinculados:</span>
+                        <strong className="font-mono font-bold text-zinc-900 tabular-nums">
+                          {assignedStudents.length} alunos
+                        </strong>
+                      </div>
+
+                      <div className="pt-2 border-t border-teal-200/60 flex items-center justify-between gap-2 text-xs font-bold text-teal-950">
+                        <div>
+                          <span className="block">Comissão Estimada do Mês:</span>
+                          <span className="text-[10px] font-medium text-teal-700">
+                            {isClosedThisMonth ? 'Competência fechada' : 'Prévia do mês vigente'}
+                          </span>
+                        </div>
+                        <span className="font-mono text-base font-extrabold text-teal-900 tabular-nums">
+                          R$ {totalFinalCommission.toFixed(2)}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Enrolled Students Quick List */}
@@ -311,11 +344,24 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
                       </span>
                     ) : (
                       assignedStudents.map(s => {
-                        const commVal = ((s.enrollment?.monthlyFee || 0) * inst.commissionPercentage) / 100;
+                        const rowOverride = commissionData.rows.find(
+                          r => r.type === 'mensalidade' && r.studentId === s.id
+                        );
+                        const commVal = rowOverride
+                          ? rowOverride.commissionAmount
+                          : ((s.enrollment?.monthlyFee || 0) * inst.commissionPercentage) / 100;
                         return (
-                          <div key={s.id} className="text-[11px] text-zinc-700 flex justify-between items-center bg-zinc-50 p-1.5 rounded">
+                          <div key={s.id} className="text-[11px] text-zinc-700 flex justify-between items-center gap-2 bg-zinc-50 p-1.5 rounded">
                             <span className="font-medium truncate">{s.name}</span>
-                            <span className="font-mono text-teal-800 font-bold">R$ {commVal.toFixed(2)} comissão</span>
+                            {canViewRevenue ? (
+                              <span className="font-mono text-teal-800 font-bold shrink-0">
+                                R$ {commVal.toFixed(2)} comissão
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-zinc-500 truncate">
+                                {s.enrollment?.modalityName || 'Matriculado'}
+                              </span>
+                            )}
                           </div>
                         );
                       })
@@ -324,31 +370,33 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
                 </div>
 
                 {/* Fechamento Mensal de Comissão */}
-                <div className="mt-4 pt-3 border-t border-zinc-100">
-                  <button
-                    onClick={() => {
-                      setSelectedInstructorForClosing(inst.id);
-                      setIsClosingModalOpen(true);
-                    }}
-                    className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-2xs ${
-                      commissionClosings?.some(c => c.instructorId === inst.id && c.month === (new Date().getMonth() + 1) && c.year === new Date().getFullYear())
-                        ? 'bg-emerald-50 text-emerald-900 border border-emerald-300 hover:bg-emerald-100'
-                        : 'bg-zinc-950 hover:bg-zinc-800 text-white'
-                    }`}
-                  >
-                    {commissionClosings?.some(c => c.instructorId === inst.id && c.month === (new Date().getMonth() + 1) && c.year === new Date().getFullYear()) ? (
-                      <>
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Comissão Fechada (Ver Relatório)</span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-3.5 h-3.5 text-teal-400" />
-                        <span>Fechar Comissão Mensal</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                {canManageClosings && (
+                  <div className="mt-4 pt-3 border-t border-zinc-100">
+                    <button
+                      onClick={() => {
+                        setSelectedInstructorForClosing(inst.id);
+                        setIsClosingModalOpen(true);
+                      }}
+                      className={`w-full py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-2xs ${
+                        isClosedThisMonth
+                          ? 'bg-emerald-50 text-emerald-900 border border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-zinc-950 hover:bg-zinc-800 text-white'
+                      }`}
+                    >
+                      {isClosedThisMonth ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Comissão Fechada (Ver Relatório)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3.5 h-3.5 text-teal-400" />
+                          <span>Fechar Comissão Mensal</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
 
               </div>
 

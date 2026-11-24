@@ -27,6 +27,7 @@ interface StudentDetailViewProps {
   onToggleStudentStatus?: (studentId: string) => void;
   onEmitContract?: (student: Student) => void;
   canManagePayments?: boolean;
+  canViewFinancialInfo?: boolean;
 }
 
 export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
@@ -36,6 +37,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
   onToggleStudentStatus,
   onEmitContract,
   canManagePayments = true,
+  canViewFinancialInfo = true,
 }) => {
   const billing = student.enrollment
     ? getEffectiveBillingStatus(student.enrollment, student.createdAt)
@@ -237,21 +239,23 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
                 </h4>
               </div>
 
-              <div className="text-right">
-                <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                  isOverdue
-                    ? 'bg-rose-100 text-rose-800'
-                    : isUpcoming
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-emerald-100 text-emerald-800'
-                }`}>
-                  {isOverdue
-                    ? 'Mensalidade Vencida / Em Atraso'
-                    : isUpcoming
-                    ? `A Vencer (Dia ${student.enrollment.dueDay})`
-                    : 'Mensalidade Em Dia / Paga'}
-                </span>
-              </div>
+              {canViewFinancialInfo && (
+                <div className="text-right">
+                  <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold ${
+                    isOverdue
+                      ? 'bg-rose-100 text-rose-800'
+                      : isUpcoming
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {isOverdue
+                      ? 'Mensalidade Vencida / Em Atraso'
+                      : isUpcoming
+                      ? `A Vencer (Dia ${student.enrollment.dueDay})`
+                      : 'Mensalidade Em Dia / Paga'}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-[11px] text-zinc-700">
@@ -267,26 +271,37 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
                 <span className="text-zinc-500 block">Professor Responsável:</span>
                 <strong>{student.enrollment.instructorName}</strong>
               </div>
-              <div>
-                <span className="text-zinc-500 block">Valor da Mensalidade:</span>
-                <strong className="font-mono font-bold text-teal-900">
-                  R$ {student.enrollment.monthlyFee.toFixed(2)} (Venc. todo dia {student.enrollment.dueDay})
-                </strong>
-                {isPaid && student.enrollment.effectivePaidAmount !== undefined && student.enrollment.effectivePaidAmount < student.enrollment.monthlyFee && (
-                  <span className="block text-[10px] text-emerald-800 font-semibold mt-0.5">
-                    Quitado com desconto: R$ {student.enrollment.effectivePaidAmount.toFixed(2)} (-R$ {(student.enrollment.monthlyFee - student.enrollment.effectivePaidAmount).toFixed(2)})
-                  </span>
-                )}
-                {isPaid && student.enrollment.paymentMethod && (
-                  <span className="inline-block text-[10px] text-teal-800 bg-white border border-teal-200 px-1.5 py-0.5 rounded font-semibold mt-1">
-                    Forma de pgto: {student.enrollment.paymentMethod}
-                  </span>
-                )}
-              </div>
+              {canViewFinancialInfo ? (
+                <div>
+                  <span className="text-zinc-500 block">Valor da Mensalidade:</span>
+                  <strong className="font-mono font-bold text-teal-900">
+                    R$ {student.enrollment.monthlyFee.toFixed(2)} (Venc. todo dia {student.enrollment.dueDay})
+                  </strong>
+                  {isPaid && student.enrollment.effectivePaidAmount !== undefined && student.enrollment.effectivePaidAmount < student.enrollment.monthlyFee && (
+                    <span className="block text-[10px] text-emerald-800 font-semibold mt-0.5">
+                      Quitado com desconto: R$ {student.enrollment.effectivePaidAmount.toFixed(2)} (-R$ {(student.enrollment.monthlyFee - student.enrollment.effectivePaidAmount).toFixed(2)})
+                    </span>
+                  )}
+                  {isPaid && student.enrollment.paymentMethod && (
+                    <span className="inline-block text-[10px] text-teal-800 bg-white border border-teal-200 px-1.5 py-0.5 rounded font-semibold mt-1">
+                      Forma de pgto: {student.enrollment.paymentMethod}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <span className="text-zinc-500 block">Início na Agenda:</span>
+                  <strong className="font-mono text-zinc-800">
+                    {student.enrollment.startDate
+                      ? student.enrollment.startDate.split('-').reverse().join('/')
+                      : 'Ativa na grade'}
+                  </strong>
+                </div>
+              )}
             </div>
 
             {/* Toggle Payment Action */}
-            {canManagePayments && (
+            {canViewFinancialInfo && canManagePayments && (
               <div className="pt-2 border-t border-teal-200/60 flex items-center justify-between">
                 <span className="text-[11px] text-zinc-600">
                   Status financeiro deste mês:
@@ -313,7 +328,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
         {/* Footer Actions */}
         <div className="pt-3 border-t border-zinc-100 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            {onEmitContract && (
+            {canViewFinancialInfo && onEmitContract && (
               <button
                 onClick={() => onEmitContract(student)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-semibold transition-colors text-xs shadow-2xs"
