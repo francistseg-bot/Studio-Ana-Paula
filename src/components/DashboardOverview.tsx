@@ -14,12 +14,19 @@ import {
   Heart,
   ChevronRight
 } from 'lucide-react';
-import { Student, MainNavigation, UserAccount } from '../types/studio';
+import { Student, MainNavigation, UserAccount, Instructor } from '../types/studio';
 import { getEffectiveBillingStatus } from '../utils/billingStatus';
-import { canAccessTab, hasAnyPermission } from '../utils/permissions';
+import {
+  canAccessTab,
+  canViewMultipleAgendas,
+  filterStudentsForUser,
+  hasAnyPermission,
+  resolveUserInstructor,
+} from '../utils/permissions';
 
 interface DashboardOverviewProps {
   students: Student[];
+  instructors?: Instructor[];
   currentUser?: UserAccount | null;
   onNavigate: (tab: MainNavigation, filter?: { status?: 'ativo' | 'inativo'; paymentStatus?: 'em_dia' | 'atrasado' }) => void;
   onSelectStudentDetail: (student: Student) => void;
@@ -27,10 +34,17 @@ interface DashboardOverviewProps {
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   students,
+  instructors = [],
   currentUser,
   onNavigate,
   onSelectStudentDetail,
 }) => {
+  const allowMultipleAgendas = !currentUser || canViewMultipleAgendas(currentUser);
+  const ownInstructor = currentUser ? resolveUserInstructor(currentUser, instructors) : null;
+  const visibleStudents = allowMultipleAgendas
+    ? students
+    : filterStudentsForUser(students, currentUser, instructors);
+
   const canAgenda = canAccessTab(currentUser, 'agenda');
   const canAlunos = canAccessTab(currentUser, 'cadastros-alunos');
   const canProfessores = canAccessTab(currentUser, 'cadastros-professores');
@@ -43,7 +57,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const currentMonth = String(today.getMonth() + 1).padStart(2, '0');
   const currentDay = String(today.getDate()).padStart(2, '0');
 
-  const birthdayStudents = students.filter((s) => {
+  const birthdayStudents = visibleStudents.filter((s) => {
     if (!s.birthDate) return false;
     const parts = s.birthDate.split('-');
     if (parts.length === 3) {
@@ -52,14 +66,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     return false;
   });
 
-  const activeStudents = students.filter(s => s.status === 'ativo');
-  const inactiveStudents = students.filter(s => s.status === 'inativo');
+  const activeStudents = visibleStudents.filter(s => s.status === 'ativo');
+  const inactiveStudents = visibleStudents.filter(s => s.status === 'inativo');
 
-  const upToDateStudents = students.filter(
+  const upToDateStudents = visibleStudents.filter(
     s => s.status === 'ativo' && s.enrollment && getEffectiveBillingStatus(s.enrollment, s.createdAt).status === 'pago'
   );
 
-  const overdueStudents = students.filter(
+  const overdueStudents = visibleStudents.filter(
     s => s.status === 'ativo' && s.enrollment && getEffectiveBillingStatus(s.enrollment, s.createdAt).status === 'vencido'
   );
 
@@ -292,10 +306,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-zinc-100">
             <div>
               <h3 className="text-sm font-bold text-zinc-900">
-                Alunos com Matrícula Ativa no Studio
+                {allowMultipleAgendas
+                  ? 'Alunos com Matrícula Ativa no Studio'
+                  : `Seus Alunos Matriculados${ownInstructor ? ` (${ownInstructor.name})` : ''}`}
               </h3>
               <p className="text-xs text-zinc-500">
-                Modalidade contratada, frequência semanal e professor responsável
+                {allowMultipleAgendas
+                  ? 'Modalidade contratada, frequência semanal e professor responsável'
+                  : 'Exibição restrita apenas aos alunos sob seu atendimento'}
               </p>
             </div>
 
@@ -311,7 +329,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
 
           <div className="space-y-3">
-            {students.slice(0, 5).map((student) => {
+            {visibleStudents.length === 0 && (
+              <div className="p-5 text-center text-xs text-zinc-400 italic">
+                Nenhum aluno vinculado ao seu atendimento no momento.
+              </div>
+            )}
+            {visibleStudents.slice(0, 5).map((student) => {
               const billing = student.enrollment
                 ? getEffectiveBillingStatus(student.enrollment, student.createdAt)
                 : null;

@@ -180,6 +180,7 @@ export const INITIAL_USERS: UserAccount[] = [
       'Gerenciar Professores',
       'Gerenciar Despesas',
       'Agendar Horários',
+      'Visualizar Múltiplas Agendas',
       'Registrar Evolução Clínica',
       'Visualizar Financeiro',
       'Visualizar DRE',

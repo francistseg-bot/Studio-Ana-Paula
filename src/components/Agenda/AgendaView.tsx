@@ -18,7 +18,8 @@ import {
   UserPlus,
   Trash2,
   CalendarDays,
-  CalendarRange
+  CalendarRange,
+  Lock
 } from 'lucide-react';
 import { 
   AgendaViewMode, 
@@ -28,7 +29,8 @@ import {
   Student, 
   Modality, 
   StudioOperatingConfig, 
-  AttendanceStatus 
+  AttendanceStatus,
+  UserAccount 
 } from '../../types/studio';
 import { AjusteHorariosModal } from './AjusteHorariosModal';
 import { RemarcarHorarioModal } from './RemarcarHorarioModal';
@@ -43,6 +45,11 @@ import {
   getProjectedSessionsForDate,
   toLocalIsoDate
 } from '../../utils/agendaProjection';
+import {
+  canViewMultipleAgendas,
+  filterStudentsForUser,
+  resolveUserInstructor
+} from '../../utils/permissions';
 
 interface AgendaViewProps {
   sessions: AgendaClassSession[];
@@ -50,6 +57,7 @@ interface AgendaViewProps {
   students: Student[];
   modalities: Modality[];
   operatingConfig: StudioOperatingConfig;
+  currentUser?: UserAccount | null;
   onUpdateSessions: (newSessions: AgendaClassSession[]) => void;
   onUpdateOperatingConfig: (newConfig: StudioOperatingConfig) => void;
   onSelectStudentDetail: (student: Student) => void;
@@ -61,6 +69,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   students,
   modalities,
   operatingConfig,
+  currentUser,
   onUpdateSessions,
   onUpdateOperatingConfig,
   onSelectStudentDetail,
@@ -71,6 +80,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   // Selected date ISO (YYYY-MM-DD, local timezone)
   const todayIso = toLocalIsoDate(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(todayIso);
+
+  // Escopo de agenda do usuário (múltiplas agendas vs apenas própria agenda)
+  const allowMultipleAgendas = !currentUser || canViewMultipleAgendas(currentUser);
+  const ownInstructor = currentUser ? resolveUserInstructor(currentUser, instructors) : null;
 
   // Filter by instructor ('all' or specific instructorId) (Requested by Francis)
   const [instructorFilter, setInstructorFilter] = useState<string>('all');
@@ -152,21 +165,40 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   const weekDates = getWeekDates(selectedDate);
   const selectedDayOfWeek = new Date(selectedDate + 'T12:00:00').getDay();
 
-  // Active instructors for display
   const activeInstructors = instructors.filter(i => i.status === 'Ativo');
-  const displayedInstructors = instructorFilter === 'all'
+  const permittedInstructors = allowMultipleAgendas
     ? activeInstructors
-    : activeInstructors.filter(i => i.id === instructorFilter);
+    : ownInstructor && ownInstructor.status === 'Ativo'
+    ? [ownInstructor]
+    : [];
+
+  const effectiveInstructorFilter = allowMultipleAgendas
+    ? instructorFilter
+    : ownInstructor?.id || '__restricted__';
+
+  const displayedInstructors = allowMultipleAgendas
+    ? (instructorFilter === 'all'
+        ? permittedInstructors
+        : permittedInstructors.filter(i => i.id === instructorFilter))
+    : permittedInstructors;
+
+  const scopedStudents = allowMultipleAgendas
+    ? students
+    : filterStudentsForUser(students, currentUser, instructors);
+
+  const scopedSessions = allowMultipleAgendas
+    ? sessions
+    : sessions.filter(s => ownInstructor && s.instructorId === ownInstructor.id);
 
   // Horários dinâmicos para a grade semanal baseados em operatingConfig + matrículas projetadas
   const weeklyTimeSlots = (() => {
-    const configured = getAllEnabledSlotsForWeek(operatingConfig, instructorFilter);
+    const configured = getAllEnabledSlotsForWeek(operatingConfig, effectiveInstructorFilter);
     const weekDateSet = new Set(weekDates.map(d => d.date));
-    const sessionTimes = sessions
-      .filter(s => weekDateSet.has(s.date) && s.students.length > 0 && (instructorFilter === 'all' || s.instructorId === instructorFilter))
+    const sessionTimes = scopedSessions
+      .filter(s => weekDateSet.has(s.date) && s.students.length > 0 && (effectiveInstructorFilter === 'all' || s.instructorId === effectiveInstructorFilter))
       .map(s => s.time);
-    const enrolledTimes = students
-      .filter(st => st.status === 'ativo' && st.enrollment?.scheduleTime && (instructorFilter === 'all' || st.enrollment.instructorId === instructorFilter))
+    const enrolledTimes = scopedStudents
+      .filter(st => st.status === 'ativo' && st.enrollment?.scheduleTime && (effectiveInstructorFilter === 'all' || st.enrollment.instructorId === effectiveInstructorFilter))
       .map(st => st.enrollment!.scheduleTime);
     return Array.from(new Set([...configured, ...sessionTimes, ...enrolledTimes])).sort();
   })();
@@ -417,22 +449,31 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           </button>
         </div>
 
-        {/* 2. BOTÃO SELECIONÁVEL DE AGENDA POR PROFESSOR (Requested by Francis) */}
+        {/* 2. BOTÃO SELECIONÁVEL DE AGENDA POR PROFESSOR (Restrito quando não possui Múltiplas Agendas) */}
         <div className="flex items-center gap-1.5 shrink-0">
           <User className="w-4 h-4 text-zinc-400" />
           <span className="font-semibold text-zinc-700 hidden sm:inline">Professor:</span>
-          <select
-            value={instructorFilter}
-            onChange={(e) => setInstructorFilter(e.target.value)}
-            className="bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-1.5 font-bold text-zinc-800 text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-600"
-          >
-            <option value="all">Todos os Professores ({activeInstructors.length})</option>
-            {activeInstructors.map((inst) => (
-              <option key={inst.id} value={inst.id}>
-                {inst.name} ({inst.councilNumber})
-              </option>
-            ))}
-          </select>
+          {allowMultipleAgendas ? (
+            <select
+              value={instructorFilter}
+              onChange={(e) => setInstructorFilter(e.target.value)}
+              className="bg-zinc-50 border border-zinc-200 rounded-xl px-3 py-1.5 font-bold text-zinc-800 text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-600"
+            >
+              <option value="all">Todos os Professores ({permittedInstructors.length})</option>
+              {permittedInstructors.map((inst) => (
+                <option key={inst.id} value={inst.id}>
+                  {inst.name} ({inst.councilNumber})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-3 py-1.5 font-bold text-xs">
+              <Lock className="w-3.5 h-3.5 text-amber-700" />
+              <span>
+                {ownInstructor ? `${ownInstructor.name} (Apenas sua agenda)` : 'Agenda restrita (sem vínculo)'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* 3. DATE NAVIGATOR */}
@@ -468,6 +509,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         </div>
 
       </div>
+
+      {/* Aviso quando usuário restrito não possui professor vinculado em 2.5 Professores */}
+      {!allowMultipleAgendas && !ownInstructor && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-xs text-amber-900 flex items-start gap-3">
+          <Lock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold">Visualização restrita apenas à sua própria agenda</p>
+            <p className="text-amber-800 mt-0.5">
+              Seu usuário não possui permissão para visualizar agendas de outros professores e ainda não está vinculado a um cadastro em <strong>2.5 Professores</strong>. Solicite à administração o vínculo em <strong>2.2 Usuários</strong>.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ============================================================== */}
       {/* VISTA 1: AGENDA POR DIA (Timeline detalhada com até 4 alunos) */}
@@ -993,7 +1047,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
       {isAjusteHorariosOpen && (
         <AjusteHorariosModal
           config={operatingConfig}
-          instructors={activeInstructors}
+          instructors={permittedInstructors}
+          restrictedInstructorOnly={!allowMultipleAgendas}
           onSave={onUpdateOperatingConfig}
           onClose={() => setIsAjusteHorariosOpen(false)}
         />
@@ -1004,9 +1059,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         <RemarcarHorarioModal
           slot={rescheduleData.slot}
           sourceSession={rescheduleData.session}
-          sessions={sessions}
-          students={students}
-          instructors={activeInstructors}
+          sessions={scopedSessions}
+          students={scopedStudents}
+          instructors={permittedInstructors}
           modalities={modalities}
           operatingConfig={operatingConfig}
           onConfirmReschedule={handleConfirmReschedule}
@@ -1018,8 +1073,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
       {addStudentSession && (
         <AddStudentToSlotModal
           session={addStudentSession}
-          students={students}
-          instructors={activeInstructors}
+          students={scopedStudents}
+          instructors={permittedInstructors}
           onAddStudentToSlot={handleAddStudentToSlot}
           onClose={() => setAddStudentSession(null)}
         />

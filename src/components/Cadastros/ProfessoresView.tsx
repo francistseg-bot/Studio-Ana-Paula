@@ -25,6 +25,7 @@ interface ProfessoresViewProps {
   modalities?: Modality[];
   commissionClosings?: MonthlyCommissionClosing[];
   commissionOverrides?: CommissionOverridesMap;
+  isRestrictedInstructor?: boolean;
   onSaveCommissionClosing?: (closing: MonthlyCommissionClosing) => void;
   onReopenCommissionClosing?: (closingId: string) => void;
   onAddInstructor: (instructor: Instructor) => void;
@@ -40,6 +41,7 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
   modalities = [],
   commissionClosings = [],
   commissionOverrides = {},
+  isRestrictedInstructor = false,
   onSaveCommissionClosing,
   onReopenCommissionClosing,
   onAddInstructor,
@@ -123,7 +125,7 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-teal-700 mb-1">
             <GraduationCap className="w-4 h-4" />
-            <span>2.4 Cadastros / Corpo Clínico & Docente</span>
+            <span>2.5 Cadastros / Corpo Clínico & Docente</span>
           </div>
           <h2 className="text-xl font-bold text-zinc-900">
             Professores & Instrutores do Studio
@@ -146,13 +148,15 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
             <span>Fechamento de Comissões</span>
           </button>
 
-          <button
-            onClick={handleOpenAdd}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white font-semibold text-xs transition-colors shadow-2xs"
-          >
-            <Plus className="w-4 h-4 text-teal-400" />
-            <span>Cadastrar Professor</span>
-          </button>
+          {!isRestrictedInstructor && (
+            <button
+              onClick={handleOpenAdd}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white font-semibold text-xs transition-colors shadow-2xs"
+            >
+              <Plus className="w-4 h-4 text-teal-400" />
+              <span>Cadastrar Professor</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -349,36 +353,38 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
               </div>
 
               {/* Action buttons: Edit, Toggle, and Delete */}
-              <div className="pt-3 mt-3 border-t border-zinc-100 flex items-center justify-between">
-                <button
-                  onClick={() => onToggleStatus(inst.id)}
-                  className="text-xs text-zinc-500 hover:text-zinc-900 font-medium"
-                >
-                  {inst.status === 'Ativo' ? 'Pausar Atividades' : 'Reativar Professor'}
-                </button>
-
-                <div className="flex items-center gap-1">
+              {!isRestrictedInstructor && (
+                <div className="pt-3 mt-3 border-t border-zinc-100 flex items-center justify-between">
                   <button
-                    onClick={() => handleOpenEdit(inst)}
-                    className="p-1.5 rounded-lg text-zinc-600 hover:text-teal-700 hover:bg-teal-50 transition-colors"
-                    title="Editar Professor e Comissão"
+                    onClick={() => onToggleStatus(inst.id)}
+                    className="text-xs text-zinc-500 hover:text-zinc-900 font-medium"
                   >
-                    <Edit3 className="w-4 h-4" />
+                    {inst.status === 'Ativo' ? 'Pausar Atividades' : 'Reativar Professor'}
                   </button>
 
-                  <button
-                    onClick={() => {
-                      if (confirm(`Deseja realmente excluir o cadastro de ${inst.name}?`)) {
-                        onDeleteInstructor(inst.id);
-                      }
-                    }}
-                    className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                    title="Excluir Professor"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenEdit(inst)}
+                      className="p-1.5 rounded-lg text-zinc-600 hover:text-teal-700 hover:bg-teal-50 transition-colors"
+                      title="Editar Professor e Comissão"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (confirm(`Deseja realmente excluir o cadastro de ${inst.name}?`)) {
+                          onDeleteInstructor(inst.id);
+                        }
+                      }}
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                      title="Excluir Professor"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
             </div>
           );

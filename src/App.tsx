@@ -55,7 +55,14 @@ import {
 } from './data/studioData';
 import { toLocalIsoDate } from './utils/agendaProjection';
 import { getCycleDueDateIso, getEffectiveBillingStatus } from './utils/billingStatus';
-import { canAccessTab, getDefaultTabForUser, hasAnyPermission } from './utils/permissions';
+import {
+  canAccessTab,
+  canViewMultipleAgendas,
+  filterStudentsForUser,
+  getDefaultTabForUser,
+  hasAnyPermission,
+  resolveUserInstructor,
+} from './utils/permissions';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainNavigation>('dashboard');
@@ -827,8 +834,25 @@ export default function App() {
     );
   };
 
-  const activeStudentsCount = students.filter((s) => s.status === 'ativo').length;
-  const inactiveStudentsCount = students.filter((s) => s.status === 'inativo').length;
+  const allowMultipleAgendas = !currentUser || canViewMultipleAgendas(currentUser);
+  const ownInstructor = currentUser ? resolveUserInstructor(currentUser, instructors) : null;
+  const scopedStudents = allowMultipleAgendas
+    ? students
+    : filterStudentsForUser(students, currentUser, instructors);
+  const scopedStudentsForAlunos = allowMultipleAgendas
+    ? students
+    : filterStudentsForUser(students, currentUser, instructors, { includeUnassigned: true });
+  const scopedInstructors = allowMultipleAgendas
+    ? instructors
+    : ownInstructor
+    ? [ownInstructor]
+    : [];
+  const scopedAgendaSessions = allowMultipleAgendas
+    ? agendaSessions
+    : agendaSessions.filter((s) => ownInstructor && s.instructorId === ownInstructor.id);
+
+  const activeStudentsCount = scopedStudents.filter((s) => s.status === 'ativo').length;
+  const inactiveStudentsCount = scopedStudents.filter((s) => s.status === 'inativo').length;
 
   // Tela Inicial de Login / Bloqueio de Acesso
   if (!currentUser) {
@@ -941,6 +965,7 @@ export default function App() {
               {currentTab === 'dashboard' && canAccessTab(currentUser, 'dashboard') && (
                 <DashboardOverview
                   students={students}
+                  instructors={instructors}
                   currentUser={currentUser}
                   onNavigate={handleNavigate}
                   onSelectStudentDetail={(student) => setSelectedStudent(student)}
@@ -960,6 +985,7 @@ export default function App() {
               {currentTab === 'cadastros-usuarios' && canAccessTab(currentUser, 'cadastros-usuarios') && (
                 <UsuariosView
                   users={users}
+                  instructors={instructors}
                   onAddUser={handleAddUser}
                   onUpdateUser={handleUpdateUser}
                   onDeleteUser={handleDeleteUser}
@@ -980,9 +1006,9 @@ export default function App() {
 
           {currentTab === 'cadastros-alunos' && (
             <AlunosView
-              students={students}
+              students={scopedStudentsForAlunos}
               modalities={modalities}
-              instructors={instructors}
+              instructors={scopedInstructors}
               companyData={companyData}
               operatingConfig={operatingConfig}
               initialFilter={alunosFilter}
@@ -996,12 +1022,13 @@ export default function App() {
 
           {currentTab === 'cadastros-professores' && (
             <ProfessoresView
-              instructors={instructors}
-              students={students}
-              agendaSessions={agendaSessions}
+              instructors={scopedInstructors}
+              students={scopedStudents}
+              agendaSessions={scopedAgendaSessions}
               modalities={modalities}
               commissionClosings={commissionClosings}
               commissionOverrides={commissionOverrides}
+              isRestrictedInstructor={!allowMultipleAgendas}
               onSaveCommissionClosing={handleSaveCommissionClosing}
               onReopenCommissionClosing={handleReopenCommissionClosing}
               onAddInstructor={handleAddInstructor}
@@ -1032,6 +1059,7 @@ export default function App() {
               students={students}
               modalities={modalities}
               operatingConfig={operatingConfig}
+              currentUser={currentUser}
               onUpdateSessions={(updated) => {
                 setAgendaSessions(updated);
                 saveMultipleDocuments('agendaSessions', updated);

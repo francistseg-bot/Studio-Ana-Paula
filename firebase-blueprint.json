@@ -12,6 +12,7 @@
         "passwordMasked": { "type": "string" },
         "role": { "type": "string" },
         "permissions": { "type": "array" },
+        "instructorId": { "type": "string" },
         "status": { "type": "string" },
         "createdAt": { "type": "string" }
       },

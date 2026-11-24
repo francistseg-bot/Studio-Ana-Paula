@@ -15,6 +15,7 @@ import { Instructor, StudioOperatingConfig, DayScheduleHours } from '../../types
 interface AjusteHorariosModalProps {
   config: StudioOperatingConfig;
   instructors: Instructor[];
+  restrictedInstructorOnly?: boolean;
   onSave: (newConfig: StudioOperatingConfig) => void;
   onClose: () => void;
 }
@@ -22,10 +23,13 @@ interface AjusteHorariosModalProps {
 export const AjusteHorariosModal: React.FC<AjusteHorariosModalProps> = ({
   config,
   instructors,
+  restrictedInstructorOnly = false,
   onSave,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'studio' | 'professores'>('studio');
+  const [activeTab, setActiveTab] = useState<'studio' | 'professores'>(
+    restrictedInstructorOnly ? 'professores' : 'studio'
+  );
   const [studioHours, setStudioHours] = useState<DayScheduleHours[]>(
     JSON.parse(JSON.stringify(config.studioHours))
   );
@@ -92,10 +96,14 @@ export const AjusteHorariosModal: React.FC<AjusteHorariosModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-zinc-900">
-                Ajuste de Horários de Atendimento & Grade
+                {restrictedInstructorOnly
+                  ? 'Meus Horários de Atendimento'
+                  : 'Ajuste de Horários de Atendimento & Grade'}
               </h3>
               <p className="text-[11px] text-zinc-500">
-                Configure os horários de funcionamento do Studio e personalize a grade por professor
+                {restrictedInstructorOnly
+                  ? 'Personalize os dias e horários da sua agenda de atendimentos'
+                  : 'Configure os horários de funcionamento do Studio e personalize a grade por professor'}
               </p>
             </div>
           </div>
@@ -109,34 +117,36 @@ export const AjusteHorariosModal: React.FC<AjusteHorariosModalProps> = ({
         </div>
 
         {/* Tabs: Geral do Studio vs Personalizado por Professor */}
-        <div className="flex items-center gap-2 p-1 bg-zinc-100 rounded-xl mb-4 shrink-0">
-          <button
-            onClick={() => setActiveTab('studio')}
-            className={`flex-1 py-2 text-center rounded-lg font-bold text-xs transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'studio'
-                ? 'bg-white text-zinc-900 shadow-2xs'
-                : 'text-zinc-600 hover:text-zinc-900'
-            }`}
-          >
-            <Settings className="w-3.5 h-3.5 text-teal-600" />
-            <span>1. Horário Geral do Studio & Lotação</span>
-          </button>
+        {!restrictedInstructorOnly && (
+          <div className="flex items-center gap-2 p-1 bg-zinc-100 rounded-xl mb-4 shrink-0">
+            <button
+              onClick={() => setActiveTab('studio')}
+              className={`flex-1 py-2 text-center rounded-lg font-bold text-xs transition-colors flex items-center justify-center gap-2 ${
+                activeTab === 'studio'
+                  ? 'bg-white text-zinc-900 shadow-2xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              <Settings className="w-3.5 h-3.5 text-teal-600" />
+              <span>1. Horário Geral do Studio & Lotação</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('professores')}
-            className={`flex-1 py-2 text-center rounded-lg font-bold text-xs transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'professores'
-                ? 'bg-white text-zinc-900 shadow-2xs'
-                : 'text-zinc-600 hover:text-zinc-900'
-            }`}
-          >
-            <User className="w-3.5 h-3.5 text-teal-600" />
-            <span>2. Horários Personalizados por Professor</span>
-          </button>
-        </div>
+            <button
+              onClick={() => setActiveTab('professores')}
+              className={`flex-1 py-2 text-center rounded-lg font-bold text-xs transition-colors flex items-center justify-center gap-2 ${
+                activeTab === 'professores'
+                  ? 'bg-white text-zinc-900 shadow-2xs'
+                  : 'text-zinc-600 hover:text-zinc-900'
+              }`}
+            >
+              <User className="w-3.5 h-3.5 text-teal-600" />
+              <span>2. Horários Personalizados por Professor</span>
+            </button>
+          </div>
+        )}
 
         {/* Tab 1: Studio Geral */}
-        {activeTab === 'studio' && (
+        {activeTab === 'studio' && !restrictedInstructorOnly && (
           <div className="overflow-y-auto pr-1 space-y-4 flex-1">
             
             {/* Lotação máxima por horário */}

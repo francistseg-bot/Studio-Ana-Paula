@@ -8,6 +8,7 @@ export interface UserAccount {
   passwordMasked?: string;
   role: UserRole;
   permissions: string[];
+  instructorId?: string;
   status: 'Ativo' | 'Inativo';
   createdAt: string;
 }

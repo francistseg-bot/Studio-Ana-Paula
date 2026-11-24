@@ -1,4 +1,4 @@
-import { MainNavigation, UserAccount } from '../types/studio';
+import { Instructor, MainNavigation, Student, UserAccount } from '../types/studio';
 
 export interface PermissionDefinition {
   id: string;
@@ -58,6 +58,11 @@ export const AVAILABLE_PERMISSIONS: PermissionDefinition[] = [
     description: 'Agendamentos, presenças e remarcações',
   },
   {
+    id: 'Visualizar Múltiplas Agendas',
+    label: 'Múltiplas Agendas (Todos)',
+    description: 'Ver agenda e dados de outros professores (desmarcado = apenas sua agenda)',
+  },
+  {
     id: 'Registrar Evolução Clínica',
     label: 'Evolução Clínica',
     description: 'Registrar atendimentos e notas clínicas na agenda',
@@ -102,6 +107,88 @@ export function hasAnyPermission(
   return requiredPermissions.some((perm) => userPerms.includes(perm));
 }
 
+export function canViewMultipleAgendas(user?: UserAccount | null): boolean {
+  if (!user || user.status !== 'Ativo') return false;
+  if (hasFullAccess(user)) return true;
+  const perms = user.permissions || [];
+  if (perms.includes('Visualizar Múltiplas Agendas')) return true;
+  if (perms.includes('Restringir à Própria Agenda')) return false;
+  if (user.role === 'Fisioterapeuta / Instrutor' || Boolean(user.instructorId)) {
+    return false;
+  }
+  return true;
+}
+
+function normalizePersonName(value?: string): string {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/^(dr\.?|dra\.?|prof\.?|profa\.?)\s+/i, '')
+    .replace(/\s+/g, ' ');
+}
+
+export function resolveUserInstructor(
+  user: UserAccount | null | undefined,
+  instructors: Instructor[]
+): Instructor | null {
+  if (!user || instructors.length === 0) return null;
+
+  if (user.instructorId) {
+    const byId = instructors.find((i) => i.id === user.instructorId);
+    if (byId) return byId;
+  }
+
+  const userEmail = user.email?.trim().toLowerCase();
+  if (userEmail) {
+    const byEmail = instructors.find((i) => i.email?.trim().toLowerCase() === userEmail);
+    if (byEmail) return byEmail;
+  }
+
+  const userNameNorm = normalizePersonName(user.name);
+  if (userNameNorm) {
+    const byName = instructors.find((i) => normalizePersonName(i.name) === userNameNorm);
+    if (byName) return byName;
+  }
+
+  return null;
+}
+
+export function studentBelongsToInstructor(
+  student: Student,
+  instructor: Instructor | null | undefined
+): boolean {
+  if (!instructor || !student.enrollment) return false;
+  if (student.enrollment.instructorId && student.enrollment.instructorId === instructor.id) {
+    return true;
+  }
+  if (
+    !student.enrollment.instructorId &&
+    normalizePersonName(student.enrollment.instructorName) === normalizePersonName(instructor.name)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function filterStudentsForUser(
+  students: Student[],
+  user: UserAccount | null | undefined,
+  instructors: Instructor[],
+  options?: { includeUnassigned?: boolean }
+): Student[] {
+  if (canViewMultipleAgendas(user)) return students;
+  const ownInstructor = resolveUserInstructor(user, instructors);
+  if (!ownInstructor) return [];
+  return students.filter((student) => {
+    if (!student.enrollment) {
+      return Boolean(options?.includeUnassigned);
+    }
+    return studentBelongsToInstructor(student, ownInstructor);
+  });
+}
+
 export function canAccessTab(
   user: UserAccount | null | undefined,
   tab: MainNavigation
@@ -125,7 +212,7 @@ export function canAccessTab(
     case 'cadastros-despesas':
       return hasAnyPermission(user, ['Gerenciar Despesas']);
     case 'agenda':
-      return hasAnyPermission(user, ['Agendar Horários', 'Registrar Evolução Clínica']);
+      return hasAnyPermission(user, ['Agendar Horários', 'Registrar Evolução Clínica', 'Visualizar Múltiplas Agendas']);
     case 'financeiro-pagar':
       return hasAnyPermission(user, ['Visualizar Financeiro', 'Gerenciar Despesas']);
     case 'financeiro-receber':

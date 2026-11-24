@@ -69,6 +69,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
               'Gerenciar Professores',
               'Gerenciar Despesas',
               'Agendar Horários',
+              'Visualizar Múltiplas Agendas',
               'Registrar Evolução Clínica',
               'Visualizar Financeiro',
               'Visualizar DRE',
