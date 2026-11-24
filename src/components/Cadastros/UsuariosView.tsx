@@ -13,6 +13,7 @@ import {
   X
 } from 'lucide-react';
 import { UserAccount, UserRole } from '../../types/studio';
+import { AVAILABLE_PERMISSIONS, ALL_PERMISSION_IDS } from '../../utils/permissions';
 
 interface UsuariosViewProps {
   users: UserAccount[];
@@ -21,17 +22,6 @@ interface UsuariosViewProps {
   onDeleteUser: (userId: string) => void;
   onToggleUserStatus: (userId: string) => void;
 }
-
-const AVAILABLE_PERMISSIONS = [
-  'Acesso Total',
-  'Gerenciar Alunos',
-  'Registrar Matrículas',
-  'Agendar Horários',
-  'Visualizar Financeiro',
-  'Editar Modalidades',
-  'Gerenciar Professores',
-  'Registrar Evolução Clínica'
-];
 
 export const UsuariosView: React.FC<UsuariosViewProps> = ({
   users,
@@ -59,7 +49,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({
     setEmail('');
     setPassword('');
     setRole('Recepcionista');
-    setSelectedPermissions(['Gerenciar Alunos', 'Registrar Matrículas', 'Agendar Horários']);
+    setSelectedPermissions(['Visualizar Visão Geral', 'Gerenciar Alunos', 'Registrar Matrículas', 'Agendar Horários']);
     setIsModalOpen(true);
   };
 
@@ -69,28 +59,49 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({
     setEmail(user.email);
     setPassword(''); // deixa vazio se não for alterar
     setRole(user.role);
-    setSelectedPermissions(user.permissions || []);
+    const normalizedPerms = (user.permissions || []).map((p) =>
+      p === 'Gerenciar Modalidades' ? 'Editar Modalidades' : p
+    );
+    setSelectedPermissions(Array.from(new Set(normalizedPerms)));
     setIsModalOpen(true);
   };
 
-  const togglePermission = (perm: string) => {
-    if (selectedPermissions.includes(perm)) {
-      setSelectedPermissions(selectedPermissions.filter(p => p !== perm));
+  const togglePermission = (permId: string) => {
+    if (permId === 'Acesso Total') {
+      if (selectedPermissions.includes('Acesso Total')) {
+        setSelectedPermissions([]);
+      } else {
+        setSelectedPermissions([...ALL_PERMISSION_IDS]);
+      }
+      return;
+    }
+
+    if (selectedPermissions.includes(permId)) {
+      setSelectedPermissions(
+        selectedPermissions.filter(p => p !== permId && p !== 'Acesso Total')
+      );
     } else {
-      setSelectedPermissions([...selectedPermissions, perm]);
+      setSelectedPermissions([...selectedPermissions, permId]);
     }
   };
 
   const handleRoleChange = (newRole: UserRole) => {
     setRole(newRole);
     if (newRole === 'Administrador') {
-      setSelectedPermissions([...AVAILABLE_PERMISSIONS]);
+      setSelectedPermissions([...ALL_PERMISSION_IDS]);
     } else if (newRole === 'Recepcionista') {
-      setSelectedPermissions(['Gerenciar Alunos', 'Registrar Matrículas', 'Agendar Horários']);
+      setSelectedPermissions(['Visualizar Visão Geral', 'Gerenciar Alunos', 'Registrar Matrículas', 'Agendar Horários']);
     } else if (newRole === 'Fisioterapeuta / Instrutor') {
       setSelectedPermissions(['Gerenciar Alunos', 'Agendar Horários', 'Registrar Evolução Clínica']);
     } else if (newRole === 'Financeiro') {
-      setSelectedPermissions(['Visualizar Financeiro', 'Registrar Matrículas']);
+      setSelectedPermissions([
+        'Visualizar Visão Geral',
+        'Visualizar Financeiro',
+        'Gerenciar Despesas',
+        'Visualizar DRE',
+        'Fechar Comissões',
+        'Registrar Matrículas'
+      ]);
     }
   };
 
@@ -137,7 +148,7 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-teal-700 mb-1">
             <Shield className="w-4 h-4" />
-            <span>2.1 Cadastros / Controle de Acesso</span>
+            <span>2.2 Cadastros / Controle de Acesso</span>
           </div>
           <h2 className="text-xl font-bold text-zinc-900">
             Usuários & Permissões da Plataforma
@@ -352,21 +363,40 @@ export const UsuariosView: React.FC<UsuariosViewProps> = ({
 
               {/* Permissions Checkbox Grid */}
               <div>
-                <label className="text-zinc-700 font-semibold block mb-2">
-                  Permissões Granulares:
-                </label>
-                <div className="grid grid-cols-2 gap-2 bg-zinc-50 p-3 rounded-xl border border-zinc-200 max-h-36 overflow-y-auto">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-zinc-700 font-semibold">
+                    Permissões Granulares (Menus e Ações):
+                  </label>
+                  <span className="text-[10px] text-zinc-500 font-mono">
+                    {selectedPermissions.length} selecionada(s)
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-zinc-50 p-3 rounded-xl border border-zinc-200 max-h-52 overflow-y-auto">
                   {AVAILABLE_PERMISSIONS.map((perm) => {
-                    const isChecked = selectedPermissions.includes(perm);
+                    const isChecked = selectedPermissions.includes(perm.id);
                     return (
-                      <label key={perm} className="flex items-center gap-2 cursor-pointer select-none">
+                      <label
+                        key={perm.id}
+                        className={`flex items-start gap-2 cursor-pointer select-none p-2 rounded-lg border transition-colors ${
+                          isChecked
+                            ? 'bg-teal-50/70 border-teal-200'
+                            : 'bg-white border-zinc-200/70 hover:bg-zinc-100/60'
+                        }`}
+                      >
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          onChange={() => togglePermission(perm)}
-                          className="rounded text-teal-600 focus:ring-teal-500 accent-teal-600"
+                          onChange={() => togglePermission(perm.id)}
+                          className="rounded text-teal-600 focus:ring-teal-500 accent-teal-600 mt-0.5 shrink-0"
                         />
-                        <span className="text-[11px] text-zinc-700">{perm}</span>
+                        <div className="min-w-0">
+                          <span className="text-[11px] font-semibold text-zinc-800 block leading-tight">
+                            {perm.label}
+                          </span>
+                          <span className="text-[10px] text-zinc-500 block leading-tight mt-0.5">
+                            {perm.description}
+                          </span>
+                        </div>
                       </label>
                     );
                   })}

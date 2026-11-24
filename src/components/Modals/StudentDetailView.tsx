@@ -26,6 +26,7 @@ interface StudentDetailViewProps {
   onTogglePaymentStatus: (studentId: string) => void;
   onToggleStudentStatus?: (studentId: string) => void;
   onEmitContract?: (student: Student) => void;
+  canManagePayments?: boolean;
 }
 
 export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
@@ -34,6 +35,7 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
   onTogglePaymentStatus,
   onToggleStudentStatus,
   onEmitContract,
+  canManagePayments = true,
 }) => {
   const billing = student.enrollment
     ? getEffectiveBillingStatus(student.enrollment, student.createdAt)
@@ -284,21 +286,23 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
             </div>
 
             {/* Toggle Payment Action */}
-            <div className="pt-2 border-t border-teal-200/60 flex items-center justify-between">
-              <span className="text-[11px] text-zinc-600">
-                Status financeiro deste mês:
-              </span>
-              <button
-                onClick={() => onTogglePaymentStatus(student.id)}
-                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                  !isPaid
-                    ? 'bg-emerald-700 hover:bg-emerald-600 text-white'
-                    : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800'
-                }`}
-              >
-                {!isPaid ? 'Dar Baixa / Marcar Pago' : 'Estornar Baixa'}
-              </button>
-            </div>
+            {canManagePayments && (
+              <div className="pt-2 border-t border-teal-200/60 flex items-center justify-between">
+                <span className="text-[11px] text-zinc-600">
+                  Status financeiro deste mês:
+                </span>
+                <button
+                  onClick={() => onTogglePaymentStatus(student.id)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                    !isPaid
+                      ? 'bg-emerald-700 hover:bg-emerald-600 text-white'
+                      : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800'
+                  }`}
+                >
+                  {!isPaid ? 'Dar Baixa / Marcar Pago' : 'Estornar Baixa'}
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 text-center text-zinc-500">

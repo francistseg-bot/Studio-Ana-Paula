@@ -14,20 +14,30 @@ import {
   Heart,
   ChevronRight
 } from 'lucide-react';
-import { Student, MainNavigation } from '../types/studio';
+import { Student, MainNavigation, UserAccount } from '../types/studio';
 import { getEffectiveBillingStatus } from '../utils/billingStatus';
+import { canAccessTab, hasAnyPermission } from '../utils/permissions';
 
 interface DashboardOverviewProps {
   students: Student[];
+  currentUser?: UserAccount | null;
   onNavigate: (tab: MainNavigation, filter?: { status?: 'ativo' | 'inativo'; paymentStatus?: 'em_dia' | 'atrasado' }) => void;
   onSelectStudentDetail: (student: Student) => void;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   students,
+  currentUser,
   onNavigate,
   onSelectStudentDetail,
 }) => {
+  const canAgenda = canAccessTab(currentUser, 'agenda');
+  const canAlunos = canAccessTab(currentUser, 'cadastros-alunos');
+  const canProfessores = canAccessTab(currentUser, 'cadastros-professores');
+  const canModalidades = canAccessTab(currentUser, 'cadastros-modalidades');
+  const canUsuarios = canAccessTab(currentUser, 'cadastros-usuarios');
+  const canFinanceiro = hasAnyPermission(currentUser, ['Visualizar Financeiro']);
+  const hasAnyQuickShortcut = canAlunos || canProfessores || canModalidades || canUsuarios;
   // Check birthdays today
   const today = new Date();
   const currentMonth = String(today.getMonth() + 1).padStart(2, '0');
@@ -94,20 +104,24 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <button
-              onClick={() => onNavigate('agenda')}
-              className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-teal-300 border border-zinc-700 font-semibold text-xs transition-colors shadow-sm flex items-center gap-2"
-            >
-              <Calendar className="w-4 h-4 text-teal-400" />
-              <span>3. Acessar Agenda</span>
-            </button>
-            <button
-              onClick={() => onNavigate('cadastros-alunos')}
-              className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-semibold text-xs transition-colors shadow-sm flex items-center gap-2"
-            >
-              <Users className="w-4 h-4" />
-              <span>Gerenciar Alunos</span>
-            </button>
+            {canAgenda && (
+              <button
+                onClick={() => onNavigate('agenda')}
+                className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-teal-300 border border-zinc-700 font-semibold text-xs transition-colors shadow-sm flex items-center gap-2"
+              >
+                <Calendar className="w-4 h-4 text-teal-400" />
+                <span>3. Acessar Agenda</span>
+              </button>
+            )}
+            {canAlunos && (
+              <button
+                onClick={() => onNavigate('cadastros-alunos')}
+                className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-semibold text-xs transition-colors shadow-sm flex items-center gap-2"
+              >
+                <Users className="w-4 h-4" />
+                <span>Gerenciar Alunos</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -127,8 +141,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           
           {/* Balão 1: Alunos Ativos */}
           <button
-            onClick={() => onNavigate('cadastros-alunos', { status: 'ativo' })}
-            className="group relative bg-white hover:bg-teal-50/40 p-4 rounded-2xl border border-zinc-200 hover:border-teal-500 shadow-2xs transition-all text-left flex flex-col justify-between"
+            type="button"
+            disabled={!canAlunos}
+            onClick={() => canAlunos && onNavigate('cadastros-alunos', { status: 'ativo' })}
+            className={`group relative bg-white p-4 rounded-2xl border border-zinc-200 shadow-2xs transition-all text-left flex flex-col justify-between ${
+              canAlunos ? 'hover:bg-teal-50/40 hover:border-teal-500 cursor-pointer' : 'cursor-default'
+            }`}
           >
             <div>
               <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
@@ -153,8 +171,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
           {/* Balão 2: Alunos Inativos */}
           <button
-            onClick={() => onNavigate('cadastros-alunos', { status: 'inativo' })}
-            className="group relative bg-white hover:bg-zinc-50 p-4 rounded-2xl border border-zinc-200 hover:border-zinc-400 shadow-2xs transition-all text-left flex flex-col justify-between"
+            type="button"
+            disabled={!canAlunos}
+            onClick={() => canAlunos && onNavigate('cadastros-alunos', { status: 'inativo' })}
+            className={`group relative bg-white p-4 rounded-2xl border border-zinc-200 shadow-2xs transition-all text-left flex flex-col justify-between ${
+              canAlunos ? 'hover:bg-zinc-50 hover:border-zinc-400 cursor-pointer' : 'cursor-default'
+            }`}
           >
             <div>
               <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
@@ -204,56 +226,60 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </button>
 
           {/* Balão 4: Mensalidades em Dia */}
-          <button
-            onClick={() => onNavigate('cadastros-alunos', { paymentStatus: 'em_dia' })}
-            className="group relative bg-white hover:bg-emerald-50/40 p-4 rounded-2xl border border-zinc-200 hover:border-emerald-500 shadow-2xs transition-all text-left flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
-                <span className="font-semibold text-zinc-700">Mensalidades em Dia</span>
-                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <CheckCircle2 className="w-4 h-4" />
+          {canFinanceiro && (
+            <button
+              onClick={() => onNavigate(canAlunos ? 'cadastros-alunos' : 'financeiro-receber', { paymentStatus: 'em_dia' })}
+              className="group relative bg-white hover:bg-emerald-50/40 p-4 rounded-2xl border border-zinc-200 hover:border-emerald-500 shadow-2xs transition-all text-left flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
+                  <span className="font-semibold text-zinc-700">Mensalidades em Dia</span>
+                  <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
                 </div>
+                <div className="text-3xl font-extrabold font-mono text-emerald-800 tabular-nums">
+                  {upToDateStudents.length}
+                </div>
+                <p className="text-[11px] text-emerald-700 font-mono font-medium mt-1">
+                  R$ {totalUpToDateAmount.toFixed(2)} em dia
+                </p>
               </div>
-              <div className="text-3xl font-extrabold font-mono text-emerald-800 tabular-nums">
-                {upToDateStudents.length}
-              </div>
-              <p className="text-[11px] text-emerald-700 font-mono font-medium mt-1">
-                R$ {totalUpToDateAmount.toFixed(2)} em dia
-              </p>
-            </div>
 
-            <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between text-[11px] text-zinc-500 group-hover:text-emerald-700 font-medium">
-              <span>Ver alunos quitados</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
+              <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between text-[11px] text-zinc-500 group-hover:text-emerald-700 font-medium">
+                <span>Ver alunos quitados</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </button>
+          )}
 
           {/* Balão 5: Mensalidades em Atraso */}
-          <button
-            onClick={() => onNavigate('cadastros-alunos', { paymentStatus: 'atrasado' })}
-            className="group relative bg-white hover:bg-rose-50/40 p-4 rounded-2xl border border-zinc-200 hover:border-rose-400 shadow-2xs transition-all text-left flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
-                <span className="font-semibold text-rose-900">Em Atraso</span>
-                <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-800 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <AlertCircle className="w-4 h-4" />
+          {canFinanceiro && (
+            <button
+              onClick={() => onNavigate(canAlunos ? 'cadastros-alunos' : 'financeiro-receber', { paymentStatus: 'atrasado' })}
+              className="group relative bg-white hover:bg-rose-50/40 p-4 rounded-2xl border border-zinc-200 hover:border-rose-400 shadow-2xs transition-all text-left flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
+                  <span className="font-semibold text-rose-900">Em Atraso</span>
+                  <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-800 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
                 </div>
+                <div className="text-3xl font-extrabold font-mono text-rose-700 tabular-nums">
+                  {overdueStudents.length}
+                </div>
+                <p className="text-[11px] text-rose-700 font-mono font-medium mt-1">
+                  R$ {totalOverdueAmount.toFixed(2)} pendente
+                </p>
               </div>
-              <div className="text-3xl font-extrabold font-mono text-rose-700 tabular-nums">
-                {overdueStudents.length}
-              </div>
-              <p className="text-[11px] text-rose-700 font-mono font-medium mt-1">
-                R$ {totalOverdueAmount.toFixed(2)} pendente
-              </p>
-            </div>
 
-            <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between text-[11px] text-rose-700 font-medium">
-              <span>Cobrança / Detalhes</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-            </div>
-          </button>
+              <div className="mt-4 pt-3 border-t border-zinc-100 flex items-center justify-between text-[11px] text-rose-700 font-medium">
+                <span>Cobrança / Detalhes</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              </div>
+            </button>
+          )}
 
         </div>
       </div>
@@ -273,13 +299,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </p>
             </div>
 
-            <button
-              onClick={() => onNavigate('cadastros-alunos')}
-              className="text-xs font-semibold text-teal-700 hover:text-teal-800 flex items-center gap-1"
-            >
-              <span>Gerenciar todos</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+            {canAlunos && (
+              <button
+                onClick={() => onNavigate('cadastros-alunos')}
+                className="text-xs font-semibold text-teal-700 hover:text-teal-800 flex items-center gap-1"
+              >
+                <span>Gerenciar todos</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -324,7 +352,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                    {student.enrollment ? (
+                    {student.enrollment && canFinanceiro ? (
                       <span className={`text-[11px] font-mono font-semibold px-2.5 py-1 rounded-lg ${
                         isOverdue
                           ? 'bg-rose-100 text-rose-800'
@@ -334,11 +362,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                       }`}>
                         {isOverdue ? 'Vencido' : isUpcoming ? `A Vencer (Dia ${student.enrollment.dueDay})` : 'Pago'} · R$ {student.enrollment.monthlyFee.toFixed(2)}
                       </span>
-                    ) : (
+                    ) : !student.enrollment ? (
                       <span className="text-[11px] text-zinc-400 italic">
                         Sem matrícula ativa
                       </span>
-                    )}
+                    ) : null}
 
                     <button
                       onClick={() => onSelectStudentDetail(student)}
@@ -363,12 +391,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 <Layers className="w-4 h-4 text-teal-700" />
                 <span>Modalidades do Studio</span>
               </h3>
-              <button
-                onClick={() => onNavigate('cadastros-modalidades')}
-                className="text-xs text-teal-700 hover:underline font-medium"
-              >
-                Configurar
-              </button>
+              {canModalidades && (
+                <button
+                  onClick={() => onNavigate('cadastros-modalidades')}
+                  className="text-xs text-teal-700 hover:underline font-medium"
+                >
+                  Configurar
+                </button>
+              )}
             </div>
 
             <div className="space-y-2 text-xs">
@@ -407,45 +437,55 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
 
           {/* Card: Atalhos de Cadastros */}
-          <div className="bg-zinc-950 text-white rounded-2xl p-5 border border-zinc-800 shadow-sm space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-teal-400">
-              Acesso Rápido aos Cadastros
-            </h4>
-            
-            <div className="space-y-1.5 text-xs">
-              <button
-                onClick={() => onNavigate('cadastros-alunos')}
-                className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors text-left"
-              >
-                <span>+ Novo Cadastro de Aluno</span>
-                <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
-              </button>
+          {hasAnyQuickShortcut && (
+            <div className="bg-zinc-950 text-white rounded-2xl p-5 border border-zinc-800 shadow-sm space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-teal-400">
+                Acesso Rápido aos Cadastros
+              </h4>
+              
+              <div className="space-y-1.5 text-xs">
+                {canAlunos && (
+                  <button
+                    onClick={() => onNavigate('cadastros-alunos')}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors text-left"
+                  >
+                    <span>+ Novo Cadastro de Aluno</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
+                  </button>
+                )}
 
-              <button
-                onClick={() => onNavigate('cadastros-professores')}
-                className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors text-left"
-              >
-                <span>+ Cadastrar Professor / Fisioterapeuta</span>
-                <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
-              </button>
+                {canProfessores && (
+                  <button
+                    onClick={() => onNavigate('cadastros-professores')}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors text-left"
+                  >
+                    <span>+ Cadastrar Professor / Fisioterapeuta</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
+                  </button>
+                )}
 
-              <button
-                onClick={() => onNavigate('cadastros-modalidades')}
-                className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors text-left"
-              >
-                <span>+ Cadastrar Nova Modalidade</span>
-                <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
-              </button>
+                {canModalidades && (
+                  <button
+                    onClick={() => onNavigate('cadastros-modalidades')}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors text-left"
+                  >
+                    <span>+ Cadastrar Nova Modalidade</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
+                  </button>
+                )}
 
-              <button
-                onClick={() => onNavigate('cadastros-usuarios')}
-                className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors text-left"
-              >
-                <span>+ Permissões & Usuários de Acesso</span>
-                <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
-              </button>
+                {canUsuarios && (
+                  <button
+                    onClick={() => onNavigate('cadastros-usuarios')}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 transition-colors text-left"
+                  >
+                    <span>+ Permissões & Usuários de Acesso</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
 

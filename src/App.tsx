@@ -55,6 +55,7 @@ import {
 } from './data/studioData';
 import { toLocalIsoDate } from './utils/agendaProjection';
 import { getCycleDueDateIso, getEffectiveBillingStatus } from './utils/billingStatus';
+import { canAccessTab, getDefaultTabForUser, hasAnyPermission } from './utils/permissions';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<MainNavigation>('dashboard');
@@ -309,19 +310,40 @@ export default function App() {
     setStudioData('currentUser', currentUser);
   }, [currentUser]);
 
-  // Auditoria e segurança contínua: se o usuário for excluído ou inativado em 2.2 Usuários, revoga o acesso imediatamente
+  // Auditoria e segurança contínua: se o usuário for excluído/inativado ou tiver permissões alteradas em 2.2 Usuários, aplica em tempo real
   useEffect(() => {
     if (currentUser && users.length > 0) {
-      const activeAccount = users.find(u => u.id === currentUser.id && u.status === 'Ativo');
+      const activeAccount = users.find(
+        u =>
+          (u.id === currentUser.id ||
+            u.email.trim().toLowerCase() === currentUser.email.trim().toLowerCase()) &&
+          u.status === 'Ativo'
+      );
       if (!activeAccount) {
         setCurrentUser(null);
+      } else if (JSON.stringify(activeAccount) !== JSON.stringify(currentUser)) {
+        setCurrentUser(activeAccount);
       }
     }
   }, [users, currentUser]);
 
+  // Garante que o usuário nunca permaneça em uma aba para a qual não tem permissão
+  useEffect(() => {
+    if (currentUser && !canAccessTab(currentUser, currentTab)) {
+      const fallbackTab = getDefaultTabForUser(currentUser);
+      if (fallbackTab && fallbackTab !== currentTab) {
+        setCurrentTab(fallbackTab);
+      }
+    }
+  }, [currentUser, currentTab]);
+
   // Handlers de Autenticação / Sessão
   const handleLogin = (user: UserAccount) => {
     setCurrentUser(user);
+    const defaultTab = getDefaultTabForUser(user);
+    if (defaultTab) {
+      setCurrentTab(defaultTab);
+    }
   };
 
   const handleLogout = () => {
@@ -365,11 +387,14 @@ export default function App() {
     });
   };
 
-  // Navigation handler from balloons or menus
+  // Navigation handler from balloons or menus (com bloqueio estrito de permissão)
   const handleNavigate = (
     tab: MainNavigation,
     filter?: { status?: 'ativo' | 'inativo'; paymentStatus?: 'em_dia' | 'atrasado' }
   ) => {
+    if (currentUser && !canAccessTab(currentUser, tab)) {
+      return;
+    }
     setCurrentTab(tab);
     setAlunosFilter(filter);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -896,33 +921,51 @@ export default function App() {
 
         {/* View Content */}
         <main className="p-4 sm:p-8 max-w-7xl w-full mx-auto flex-1">
-          {currentTab === 'dashboard' && (
-            <DashboardOverview
-              students={students}
-              onNavigate={handleNavigate}
-              onSelectStudentDetail={(student) => setSelectedStudent(student)}
-            />
-          )}
+          {!canAccessTab(currentUser, currentTab) ? (
+            <div className="bg-white rounded-2xl border border-zinc-200 p-8 text-center max-w-md mx-auto mt-10 shadow-2xs space-y-3">
+              <h2 className="text-base font-bold text-zinc-900">
+                Acesso Restrito
+              </h2>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                Seu usuário não possui permissão ativa para visualizar módulos no momento. Solicite à administração a liberação das permissões em <strong>2.2 Usuários</strong>.
+              </p>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-colors"
+              >
+                Voltar ao Login
+              </button>
+            </div>
+          ) : (
+            <>
+              {currentTab === 'dashboard' && canAccessTab(currentUser, 'dashboard') && (
+                <DashboardOverview
+                  students={students}
+                  currentUser={currentUser}
+                  onNavigate={handleNavigate}
+                  onSelectStudentDetail={(student) => setSelectedStudent(student)}
+                />
+              )}
 
-          {currentTab === 'cadastros-empresa' && (
-            <EmpresaView
-              companyData={companyData}
-              onSaveCompanyData={(data) => {
-                setCompanyData(data);
-                saveDocument('settings', { id: 'companyData', ...data });
-              }}
-            />
-          )}
+              {currentTab === 'cadastros-empresa' && canAccessTab(currentUser, 'cadastros-empresa') && (
+                <EmpresaView
+                  companyData={companyData}
+                  onSaveCompanyData={(data) => {
+                    setCompanyData(data);
+                    saveDocument('settings', { id: 'companyData', ...data });
+                  }}
+                />
+              )}
 
-          {currentTab === 'cadastros-usuarios' && (
-            <UsuariosView
-              users={users}
-              onAddUser={handleAddUser}
-              onUpdateUser={handleUpdateUser}
-              onDeleteUser={handleDeleteUser}
-              onToggleUserStatus={handleToggleUserStatus}
-            />
-          )}
+              {currentTab === 'cadastros-usuarios' && canAccessTab(currentUser, 'cadastros-usuarios') && (
+                <UsuariosView
+                  users={users}
+                  onAddUser={handleAddUser}
+                  onUpdateUser={handleUpdateUser}
+                  onDeleteUser={handleDeleteUser}
+                  onToggleUserStatus={handleToggleUserStatus}
+                />
+              )}
 
           {currentTab === 'cadastros-modalidades' && (
             <ModalidadesView
@@ -1080,20 +1123,22 @@ export default function App() {
             />
           )}
 
-          {currentTab === 'financeiro-dre' && (
-            <DREView
-              students={students}
-              expenses={expenses}
-              instructors={instructors}
-              agendaSessions={agendaSessions}
-              modalities={modalities}
-              commissionClosings={commissionClosings}
-              commissionOverrides={commissionOverrides}
-              onUpdateCommissionOverrides={handleUpdateCommissionOverrides}
-              onSaveCommissionClosing={handleSaveCommissionClosing}
-              onReopenCommissionClosing={handleReopenCommissionClosing}
-              onNavigateTab={(tab) => handleNavigate(tab)}
-            />
+              {currentTab === 'financeiro-dre' && canAccessTab(currentUser, 'financeiro-dre') && (
+                <DREView
+                  students={students}
+                  expenses={expenses}
+                  instructors={instructors}
+                  agendaSessions={agendaSessions}
+                  modalities={modalities}
+                  commissionClosings={commissionClosings}
+                  commissionOverrides={commissionOverrides}
+                  onUpdateCommissionOverrides={handleUpdateCommissionOverrides}
+                  onSaveCommissionClosing={handleSaveCommissionClosing}
+                  onReopenCommissionClosing={handleReopenCommissionClosing}
+                  onNavigateTab={(tab) => handleNavigate(tab)}
+                />
+              )}
+            </>
           )}
         </main>
 
@@ -1125,6 +1170,7 @@ export default function App() {
           onClose={() => setSelectedStudent(null)}
           onTogglePaymentStatus={handleTogglePaymentStatus}
           onToggleStudentStatus={handleToggleStudentStatus}
+          canManagePayments={hasAnyPermission(currentUser, ['Visualizar Financeiro'])}
           onEmitContract={(student) => {
             setSelectedStudent(null);
             setContractStudent(student);

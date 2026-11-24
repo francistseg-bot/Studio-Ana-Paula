@@ -18,6 +18,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { MainNavigation, UserAccount } from '../types/studio';
+import { canAccessTab } from '../utils/permissions';
 
 interface SidebarProps {
   currentTab: MainNavigation;
@@ -40,6 +41,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isCadastrosActive = currentTab.startsWith('cadastros-');
+
+  const canDashboard = canAccessTab(currentUser, 'dashboard');
+  const canEmpresa = canAccessTab(currentUser, 'cadastros-empresa');
+  const canUsuarios = canAccessTab(currentUser, 'cadastros-usuarios');
+  const canModalidades = canAccessTab(currentUser, 'cadastros-modalidades');
+  const canAlunos = canAccessTab(currentUser, 'cadastros-alunos');
+  const canProfessores = canAccessTab(currentUser, 'cadastros-professores');
+  const canDespesas = canAccessTab(currentUser, 'cadastros-despesas');
+  const hasAnyCadastro =
+    canEmpresa || canUsuarios || canModalidades || canAlunos || canProfessores || canDespesas;
+
+  const canAgenda = canAccessTab(currentUser, 'agenda');
+
+  const canPagar = canAccessTab(currentUser, 'financeiro-pagar');
+  const canReceber = canAccessTab(currentUser, 'financeiro-receber');
+  const canDre = canAccessTab(currentUser, 'financeiro-dre');
+  const hasAnyFinanceiro = canPagar || canReceber || canDre;
 
   const handleSelect = (tab: MainNavigation) => {
     onSelectTab(tab);
@@ -123,207 +141,235 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* 1. Visão Geral (Dashboard) */}
-            <button
-              onClick={() => handleSelect('dashboard')}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
-                currentTab === 'dashboard'
-                  ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
-                  : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <LayoutDashboard className={`w-4 h-4 ${currentTab === 'dashboard' ? 'text-teal-400' : 'text-zinc-400'}`} />
-                <span>1. Visão Geral</span>
-              </div>
-              <span className="text-[10px] text-teal-400 font-mono font-bold bg-teal-950/60 px-1.5 py-0.5 rounded border border-teal-800/40">
-                Hub
-              </span>
-            </button>
+            {canDashboard && (
+              <button
+                onClick={() => handleSelect('dashboard')}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
+                  currentTab === 'dashboard'
+                    ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
+                    : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <LayoutDashboard className={`w-4 h-4 ${currentTab === 'dashboard' ? 'text-teal-400' : 'text-zinc-400'}`} />
+                  <span>1. Visão Geral</span>
+                </div>
+                <span className="text-[10px] text-teal-400 font-mono font-bold bg-teal-950/60 px-1.5 py-0.5 rounded border border-teal-800/40">
+                  Hub
+                </span>
+              </button>
+            )}
 
             {/* 2. Cadastros (Parent Menu) */}
-            <div className="pt-2">
-              <button
-                onClick={() => setIsCadastrosOpen(!isCadastrosOpen)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
-                  isCadastrosActive
-                    ? 'text-white bg-zinc-900/80 font-semibold'
-                    : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <FolderPlus className={`w-4 h-4 ${isCadastrosActive ? 'text-teal-400' : 'text-zinc-400'}`} />
-                  <span>2. Cadastros</span>
-                </div>
-                {isCadastrosOpen ? (
-                  <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
-                ) : (
-                  <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+            {hasAnyCadastro && (
+              <div className="pt-2">
+                <button
+                  onClick={() => setIsCadastrosOpen(!isCadastrosOpen)}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
+                    isCadastrosActive
+                      ? 'text-white bg-zinc-900/80 font-semibold'
+                      : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <FolderPlus className={`w-4 h-4 ${isCadastrosActive ? 'text-teal-400' : 'text-zinc-400'}`} />
+                    <span>2. Cadastros</span>
+                  </div>
+                  {isCadastrosOpen ? (
+                    <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+                  )}
+                </button>
+
+                {/* Cadastros Sub-items */}
+                {isCadastrosOpen && (
+                  <div className="ml-4 pl-3 border-l border-zinc-800 space-y-1 mt-1.5 py-1">
+                    
+                    {/* 2.1 Empresa */}
+                    {canEmpresa && (
+                      <button
+                        onClick={() => handleSelect('cadastros-empresa')}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
+                          currentTab === 'cadastros-empresa'
+                            ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
+                            : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+                          <span>2.1 Empresa & Contrato</span>
+                        </div>
+                      </button>
+                    )}
+
+                    {/* 2.2 Usuários */}
+                    {canUsuarios && (
+                      <button
+                        onClick={() => handleSelect('cadastros-usuarios')}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
+                          currentTab === 'cadastros-usuarios'
+                            ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
+                            : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <UserCheck className="w-3.5 h-3.5" />
+                          <span>2.2 Usuários</span>
+                        </div>
+                      </button>
+                    )}
+
+                    {/* 2.3 Modalidades */}
+                    {canModalidades && (
+                      <button
+                        onClick={() => handleSelect('cadastros-modalidades')}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
+                          currentTab === 'cadastros-modalidades'
+                            ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
+                            : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>2.3 Modalidades</span>
+                        </div>
+                      </button>
+                    )}
+
+                    {/* 2.4 Alunos & Matrícula */}
+                    {canAlunos && (
+                      <button
+                        onClick={() => handleSelect('cadastros-alunos')}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
+                          currentTab === 'cadastros-alunos'
+                            ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
+                            : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Users className="w-3.5 h-3.5" />
+                          <span>2.4 Alunos</span>
+                        </div>
+                        <span className="text-[10px] font-mono text-zinc-400 tabular-nums">
+                          {activeStudentsCount}
+                        </span>
+                      </button>
+                    )}
+
+                    {/* 2.5 Professor / Instrutor */}
+                    {canProfessores && (
+                      <button
+                        onClick={() => handleSelect('cadastros-professores')}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
+                          currentTab === 'cadastros-professores'
+                            ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
+                            : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <GraduationCap className="w-3.5 h-3.5" />
+                          <span>2.5 Professores</span>
+                        </div>
+                      </button>
+                    )}
+
+                    {/* 2.6 Despesas (Centros de Custo) */}
+                    {canDespesas && (
+                      <button
+                        onClick={() => handleSelect('cadastros-despesas')}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
+                          currentTab === 'cadastros-despesas'
+                            ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
+                            : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="w-3.5 h-3.5" />
+                          <span>2.6 Despesas</span>
+                        </div>
+                      </button>
+                    )}
+
+                  </div>
                 )}
-              </button>
-
-              {/* Cadastros Sub-items */}
-              {isCadastrosOpen && (
-                <div className="ml-4 pl-3 border-l border-zinc-800 space-y-1 mt-1.5 py-1">
-                  
-                  {/* 2.1 Empresa (NO TOPO, NOVO) */}
-                  <button
-                    onClick={() => handleSelect('cadastros-empresa')}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
-                      currentTab === 'cadastros-empresa'
-                        ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
-                        : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
-                      <span>2.1 Empresa & Contrato</span>
-                    </div>
-                  </button>
-
-                  {/* 2.2 Usuários */}
-                  <button
-                    onClick={() => handleSelect('cadastros-usuarios')}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
-                      currentTab === 'cadastros-usuarios'
-                        ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
-                        : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <UserCheck className="w-3.5 h-3.5" />
-                      <span>2.2 Usuários</span>
-                    </div>
-                  </button>
-
-                  {/* 2.3 Modalidades */}
-                  <button
-                    onClick={() => handleSelect('cadastros-modalidades')}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
-                      currentTab === 'cadastros-modalidades'
-                        ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
-                        : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-3.5 h-3.5" />
-                      <span>2.3 Modalidades</span>
-                    </div>
-                  </button>
-
-                  {/* 2.4 Alunos & Matrícula */}
-                  <button
-                    onClick={() => handleSelect('cadastros-alunos')}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
-                      currentTab === 'cadastros-alunos'
-                        ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
-                        : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Users className="w-3.5 h-3.5" />
-                      <span>2.4 Alunos</span>
-                    </div>
-                    <span className="text-[10px] font-mono text-zinc-400 tabular-nums">
-                      {activeStudentsCount}
-                    </span>
-                  </button>
-
-                  {/* 2.5 Professor / Instrutor */}
-                  <button
-                    onClick={() => handleSelect('cadastros-professores')}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
-                      currentTab === 'cadastros-professores'
-                        ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
-                        : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <GraduationCap className="w-3.5 h-3.5" />
-                      <span>2.5 Professores</span>
-                    </div>
-                  </button>
-
-                  {/* 2.6 Despesas (Centros de Custo) */}
-                  <button
-                    onClick={() => handleSelect('cadastros-despesas')}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
-                      currentTab === 'cadastros-despesas'
-                        ? 'bg-teal-500/20 text-teal-300 font-semibold border-l-2 border-teal-400'
-                        : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900/60'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <DollarSign className="w-3.5 h-3.5" />
-                      <span>2.6 Despesas</span>
-                    </div>
-                  </button>
-
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* 3. Agenda */}
-            <div className="pt-2">
-              <button
-                onClick={() => handleSelect('agenda')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
-                  currentTab === 'agenda'
-                    ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
-                    : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Calendar className={`w-4 h-4 ${currentTab === 'agenda' ? 'text-teal-400' : 'text-zinc-400'}`} />
-                  <span>3. Agenda</span>
-                </div>
-              </button>
-            </div>
+            {canAgenda && (
+              <div className="pt-2">
+                <button
+                  onClick={() => handleSelect('agenda')}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
+                    currentTab === 'agenda'
+                      ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
+                      : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Calendar className={`w-4 h-4 ${currentTab === 'agenda' ? 'text-teal-400' : 'text-zinc-400'}`} />
+                    <span>3. Agenda</span>
+                  </div>
+                </button>
+              </div>
+            )}
 
-            {/* 4. Financeiro (NOVO MENU 4) */}
-            <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 mt-4">
-              Financeiro
-            </div>
-            <div className="space-y-1">
-              <button
-                onClick={() => handleSelect('financeiro-pagar')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
-                  currentTab === 'financeiro-pagar'
-                    ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
-                    : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <XCircle className={`w-4 h-4 ${currentTab === 'financeiro-pagar' ? 'text-teal-400' : 'text-zinc-400'}`} />
-                  <span>4.1 Contas a Pagar</span>
+            {/* 4. Financeiro */}
+            {hasAnyFinanceiro && (
+              <>
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 mt-4">
+                  Financeiro
                 </div>
-              </button>
-              <button
-                onClick={() => handleSelect('financeiro-receber')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
-                  currentTab === 'financeiro-receber'
-                    ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
-                    : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <CheckCircle2 className={`w-4 h-4 ${currentTab === 'financeiro-receber' ? 'text-teal-400' : 'text-zinc-400'}`} />
-                  <span>4.2 Contas a Receber</span>
+                <div className="space-y-1">
+                  {canPagar && (
+                    <button
+                      onClick={() => handleSelect('financeiro-pagar')}
+                      className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
+                        currentTab === 'financeiro-pagar'
+                          ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
+                          : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <XCircle className={`w-4 h-4 ${currentTab === 'financeiro-pagar' ? 'text-teal-400' : 'text-zinc-400'}`} />
+                        <span>4.1 Contas a Pagar</span>
+                      </div>
+                    </button>
+                  )}
+                  {canReceber && (
+                    <button
+                      onClick={() => handleSelect('financeiro-receber')}
+                      className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
+                        currentTab === 'financeiro-receber'
+                          ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
+                          : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <CheckCircle2 className={`w-4 h-4 ${currentTab === 'financeiro-receber' ? 'text-teal-400' : 'text-zinc-400'}`} />
+                        <span>4.2 Contas a Receber</span>
+                      </div>
+                    </button>
+                  )}
+                  {canDre && (
+                    <button
+                      onClick={() => handleSelect('financeiro-dre')}
+                      className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
+                        currentTab === 'financeiro-dre'
+                          ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
+                          : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Layers className={`w-4 h-4 ${currentTab === 'financeiro-dre' ? 'text-teal-400' : 'text-zinc-400'}`} />
+                        <span>4.3 DRE</span>
+                      </div>
+                    </button>
+                  )}
                 </div>
-              </button>
-              <button
-                onClick={() => handleSelect('financeiro-dre')}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium transition-colors text-left ${
-                  currentTab === 'financeiro-dre'
-                    ? 'bg-teal-500/15 text-teal-300 font-semibold border border-teal-500/30'
-                    : 'text-zinc-300 hover:text-white hover:bg-zinc-900'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Layers className={`w-4 h-4 ${currentTab === 'financeiro-dre' ? 'text-teal-400' : 'text-zinc-400'}`} />
-                  <span>4.3 DRE</span>
-                </div>
-              </button>
-            </div>
+              </>
+            )}
           </nav>
         </div>
 
