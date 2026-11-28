@@ -55,6 +55,7 @@ import {
 } from './data/studioData';
 import { toLocalIsoDate } from './utils/agendaProjection';
 import { getCycleDueDateIso, getEffectiveBillingStatus } from './utils/billingStatus';
+import { getEnrollmentSlots } from './utils/enrollmentSchedule';
 import {
   canAccessTab,
   canCloseInstructorCommissions,
@@ -440,7 +441,8 @@ export default function App() {
       };
     }
 
-    const { scheduleDays, scheduleTime, instructorId, instructorName, modalityName, startDate } = student.enrollment;
+    const { scheduleTime, instructorId, instructorName, modalityName, startDate } = student.enrollment;
+    const enrollmentSlots = getEnrollmentSlots(student.enrollment);
     const daysOfWeekMap: Record<string, number> = {
       Domingo: 0,
       Segunda: 1,
@@ -458,9 +460,14 @@ export default function App() {
     const diffToMonday = monday.getDay() === 0 ? -6 : 1 - monday.getDay();
     monday.setDate(monday.getDate() + diffToMonday);
 
-    // Sincroniza a partir da Data de Início nas próximas 4 semanas
+    // Sincroniza a partir da Data de Início nas próximas 4 semanas respeitando horário e professor de cada dia
     for (let week = 0; week < 4; week++) {
-      for (const dayName of scheduleDays) {
+      for (const slot of enrollmentSlots) {
+        const dayName = slot.day;
+        const slotTime = slot.time || scheduleTime;
+        const slotInstructorId = slot.instructorId || instructorId;
+        const slotInstructorName = slot.instructorName || instructorName;
+
         const dayOfWeek = daysOfWeekMap[dayName];
         if (dayOfWeek === undefined) continue;
 
@@ -472,16 +479,16 @@ export default function App() {
         if (startDate && dateIso < startDate) continue;
 
         let sessionIndex = nextSessions.findIndex(
-          s => s.date === dateIso && s.time === scheduleTime && s.instructorId === instructorId
+          s => s.date === dateIso && s.time === slotTime && s.instructorId === slotInstructorId
         );
 
         if (sessionIndex === -1) {
           const created: AgendaClassSession = {
-            id: `sess-${dateIso}-${scheduleTime.replace(':', '')}-${instructorId}`,
+            id: `sess-${dateIso}-${slotTime.replace(':', '')}-${slotInstructorId}`,
             date: dateIso,
-            time: scheduleTime,
-            instructorId,
-            instructorName,
+            time: slotTime,
+            instructorId: slotInstructorId,
+            instructorName: slotInstructorName,
             modalityName,
             maxCapacity: operatingConfig.defaultCapacity || 4,
             students: [],
@@ -500,13 +507,13 @@ export default function App() {
             students: [
               ...targetSession.students,
               {
-                id: `slot-${student.id}-${dateIso}-${scheduleTime.replace(':', '')}`,
+                id: `slot-${student.id}-${dateIso}-${slotTime.replace(':', '')}`,
                 studentId: student.id,
                 studentName: student.name,
                 studentPhone: student.phone,
                 studentPhoto: student.photoUrl,
                 attendanceStatus: 'agendado',
-                notes: `Matrícula: ${modalityName} (${dayName}s ${scheduleTime})`,
+                notes: `Matrícula: ${modalityName} (${dayName}s ${slotTime})`,
               },
             ],
           };

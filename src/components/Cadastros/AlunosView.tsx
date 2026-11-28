@@ -24,15 +24,29 @@ import {
   Trash2,
   Clock
 } from 'lucide-react';
-import { Student, Modality, Instructor, Enrollment, CompanyData, StudioOperatingConfig } from '../../types/studio';
+import { Student, Modality, Instructor, Enrollment, EnrollmentScheduleSlot, CompanyData, StudioOperatingConfig } from '../../types/studio';
 import { ContratoModal } from '../Modals/ContratoModal';
 import {
   getAvailableSlotsForEnrollment,
   getEffectiveScheduleForInstructor,
+  getSlotsForDay,
   DAY_NAME_TO_NUMBER
 } from '../../utils/scheduleSlots';
 import { toLocalIsoDate } from '../../utils/agendaProjection';
 import { getCycleDueDateIso, getEffectiveBillingStatus } from '../../utils/billingStatus';
+import {
+  formatEnrollmentInstructorsSummary,
+  formatEnrollmentScheduleSummary,
+  getEnrollmentInstructorShares,
+  getEnrollmentSlots,
+  hasDistinctSlotTimesOrInstructors,
+} from '../../utils/enrollmentSchedule';
+
+const WEEKDAY_ORDER = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+
+function sortWeekDays(days: string[]): string[] {
+  return [...days].sort((a, b) => WEEKDAY_ORDER.indexOf(a) - WEEKDAY_ORDER.indexOf(b));
+}
 
 interface AlunosViewProps {
   students: Student[];
@@ -101,6 +115,14 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
   const [selectedDays, setSelectedDays] = useState<string[]>(['Terça', 'Quinta']);
   const [scheduleTime, setScheduleTime] = useState('08:00');
   const [instructorId, setInstructorId] = useState(instructors[0]?.id || '');
+  const [scheduleSlots, setScheduleSlots] = useState<EnrollmentScheduleSlot[]>(() =>
+    ['Terça', 'Quinta'].map((day) => ({
+      day,
+      time: '08:00',
+      instructorId: instructors[0]?.id || '',
+      instructorName: instructors[0]?.name || 'A definir',
+    }))
+  );
   const [dueDayInput, setDueDayInput] = useState<string>('10');
   const [startDate, setStartDate] = useState<string>(() => toLocalIsoDate(new Date()));
   const [paymentStatus, setPaymentStatus] = useState<'em_dia' | 'pendente' | 'atrasado'>('pendente');
@@ -124,7 +146,28 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
     ? ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
     : ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
-  // Mantém o horário selecionado compatível com as janelas configuradas em 3. Agenda
+  const buildSlotForDay = (
+    day: string,
+    instId: string,
+    preferredTime: string
+  ): EnrollmentScheduleSlot => {
+    const chosenInst = instructors.find(i => i.id === instId) || instructors[0];
+    const resolvedInstId = chosenInst?.id || '';
+    const dayNum = DAY_NAME_TO_NUMBER[day];
+    const effectiveSchedule = getEffectiveScheduleForInstructor(operatingConfig, resolvedInstId);
+    const daySlots = dayNum !== undefined ? getSlotsForDay(effectiveSchedule, dayNum) : [];
+    const resolvedTime = daySlots.includes(preferredTime)
+      ? preferredTime
+      : daySlots[0] || preferredTime || '08:00';
+    return {
+      day,
+      time: resolvedTime,
+      instructorId: resolvedInstId,
+      instructorName: chosenInst?.name || 'A definir',
+    };
+  };
+
+  // Mantém o horário padrão compatível com as janelas configuradas em 3. Agenda
   useEffect(() => {
     if (scheduleInfo.slots.length > 0 && !scheduleInfo.slots.includes(scheduleTime)) {
       const isEditingLegacySlot = editingStudent?.enrollment?.scheduleTime === scheduleTime;
@@ -142,10 +185,92 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
 
   const toggleDay = (day: string) => {
     if (selectedDays.includes(day)) {
-      setSelectedDays(selectedDays.filter(d => d !== day));
+      const nextDays = selectedDays.filter(d => d !== day);
+      setSelectedDays(nextDays);
+      setScheduleSlots(prev => prev.filter(s => s.day !== day));
     } else {
-      setSelectedDays([...selectedDays, day]);
+      const nextDays = sortWeekDays([...selectedDays, day]);
+      setSelectedDays(nextDays);
+      const newSlot = buildSlotForDay(day, instructorId || instructors[0]?.id || '', scheduleTime);
+      setScheduleSlots(prev =>
+        [...prev.filter(s => s.day !== day), newSlot].sort(
+          (a, b) => WEEKDAY_ORDER.indexOf(a.day) - WEEKDAY_ORDER.indexOf(b.day)
+        )
+      );
     }
+  };
+
+  const handleDefaultInstructorChange = (newInstId: string) => {
+    const prevInstId = instructorId;
+    setInstructorId(newInstId);
+    const newInst = instructors.find(i => i.id === newInstId) || instructors[0];
+    if (!newInst) return;
+    setScheduleSlots(prev => {
+      const allMatchedPrev = prev.every(s => !s.instructorId || s.instructorId === prevInstId);
+      if (!allMatchedPrev) return prev;
+      return prev.map(slot => {
+        const dayNum = DAY_NAME_TO_NUMBER[slot.day];
+        const instSched = getEffectiveScheduleForInstructor(operatingConfig, newInst.id);
+        const dayAvailable = dayNum !== undefined ? getSlotsForDay(instSched, dayNum) : [];
+        const nextTime =
+          dayAvailable.length === 0 || dayAvailable.includes(slot.time)
+            ? slot.time
+            : dayAvailable[0];
+        return {
+          ...slot,
+          time: nextTime,
+          instructorId: newInst.id,
+          instructorName: newInst.name,
+        };
+      });
+    });
+  };
+
+  const handleDefaultTimeChange = (newTime: string) => {
+    const prevTime = scheduleTime;
+    setScheduleTime(newTime);
+    setScheduleSlots(prev => {
+      const allMatchedPrev = prev.every(s => !s.time || s.time === prevTime);
+      if (!allMatchedPrev) return prev;
+      return prev.map(slot => ({ ...slot, time: newTime }));
+    });
+  };
+
+  const handleApplyDefaultToAllDays = () => {
+    const targetInstId = instructorId || instructors[0]?.id || '';
+    setScheduleSlots(prev =>
+      prev.map(slot => buildSlotForDay(slot.day, targetInstId, scheduleTime))
+    );
+  };
+
+  const handleSlotTimeChange = (day: string, newTime: string) => {
+    setScheduleSlots(prev =>
+      prev.map(slot => (slot.day === day ? { ...slot, time: newTime } : slot))
+    );
+  };
+
+  const handleSlotInstructorChange = (day: string, newInstId: string) => {
+    const chosenInst = instructors.find(i => i.id === newInstId);
+    if (!chosenInst) return;
+    const dayNum = DAY_NAME_TO_NUMBER[day];
+    const instSched = getEffectiveScheduleForInstructor(operatingConfig, chosenInst.id);
+    const dayAvailable = dayNum !== undefined ? getSlotsForDay(instSched, dayNum) : [];
+
+    setScheduleSlots(prev =>
+      prev.map(slot => {
+        if (slot.day !== day) return slot;
+        const nextTime =
+          dayAvailable.length === 0 || dayAvailable.includes(slot.time)
+            ? slot.time
+            : dayAvailable[0];
+        return {
+          ...slot,
+          time: nextTime,
+          instructorId: chosenInst.id,
+          instructorName: chosenInst.name,
+        };
+      })
+    );
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -163,6 +288,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
     const defaultInstId = instructors[0]?.id || '';
     const defaultDays = ['Terça', 'Quinta'];
     const defaultSchedule = getAvailableSlotsForEnrollment(operatingConfig, defaultInstId, defaultDays);
+    const defaultTime = defaultSchedule.slots[0] || '08:00';
 
     setName('');
     setBirthDate('1990-01-01');
@@ -182,8 +308,9 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
     setSelectedModalityId(modalities[0]?.id || '');
     setDaysPerWeek(2);
     setSelectedDays(defaultDays);
-    setScheduleTime(defaultSchedule.slots[0] || '08:00');
+    setScheduleTime(defaultTime);
     setInstructorId(defaultInstId);
+    setScheduleSlots(defaultDays.map(day => buildSlotForDay(day, defaultInstId, defaultTime)));
     setDueDayInput('10');
     setStartDate(toLocalIsoDate(new Date()));
     setPaymentStatus('pendente');
@@ -214,12 +341,17 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
 
     if (student.enrollment) {
       const billing = getEffectiveBillingStatus(student.enrollment, student.createdAt);
+      const existingSlots = getEnrollmentSlots(student.enrollment);
+      const sortedSlots = [...existingSlots].sort(
+        (a, b) => WEEKDAY_ORDER.indexOf(a.day) - WEEKDAY_ORDER.indexOf(b.day)
+      );
       setIncludeEnrollment(true);
       setSelectedModalityId(student.enrollment.modalityId);
       setDaysPerWeek(student.enrollment.daysPerWeek);
-      setSelectedDays(student.enrollment.scheduleDays);
-      setScheduleTime(student.enrollment.scheduleTime);
-      setInstructorId(student.enrollment.instructorId);
+      setSelectedDays(sortedSlots.map(s => s.day));
+      setScheduleTime(sortedSlots[0]?.time || student.enrollment.scheduleTime);
+      setInstructorId(sortedSlots[0]?.instructorId || student.enrollment.instructorId);
+      setScheduleSlots(sortedSlots);
       setDueDayInput((student.enrollment.dueDay || 10).toString());
       setStartDate(student.enrollment.startDate || student.createdAt || toLocalIsoDate(new Date()));
       setPaymentStatus(
@@ -253,6 +385,25 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
       const todayIso = toLocalIsoDate(new Date());
       const dueDateIso = getCycleDueDateIso(parsedDueDay, effectiveStart);
 
+      const normalizedSlots: EnrollmentScheduleSlot[] = (scheduleSlots.length > 0
+        ? scheduleSlots
+        : (selectedDays.length > 0 ? selectedDays : ['Segunda', 'Quarta']).map(day =>
+            buildSlotForDay(day, chosenInst?.id || '', scheduleTime)
+          )
+      ).map(sl => {
+        const matchedInst = instructors.find(i => i.id === sl.instructorId);
+        return {
+          day: sl.day,
+          time: sl.time || scheduleTime || '08:00',
+          instructorId: matchedInst?.id || sl.instructorId || chosenInst?.id || '',
+          instructorName: matchedInst?.name || sl.instructorName || chosenInst?.name || 'A definir',
+        };
+      });
+      const primarySlot = normalizedSlots[0];
+      const combinedInstructorName = formatEnrollmentInstructorsSummary({
+        scheduleSlots: normalizedSlots,
+      } as Enrollment);
+
       // Se o vencimento for >= Hoje e não estiver pago, nunca salva como vencido/atrasado
       const normalizedStatus: 'em_dia' | 'pendente' | 'atrasado' =
         paymentStatus === 'em_dia'
@@ -268,11 +419,12 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
         ...(existingEnr || {}),
         modalityId: chosenMod?.id || 'mod-1',
         modalityName: chosenMod?.name || 'Pilates em Aparelhos',
-        daysPerWeek: chosenMod?.daysPerWeek || daysPerWeek,
-        scheduleDays: selectedDays,
-        scheduleTime,
-        instructorId: chosenInst?.id || '',
-        instructorName: chosenInst?.name || 'A definir',
+        daysPerWeek: chosenMod?.daysPerWeek || normalizedSlots.length || daysPerWeek,
+        scheduleDays: normalizedSlots.map(s => s.day),
+        scheduleTime: primarySlot?.time || scheduleTime,
+        scheduleSlots: normalizedSlots,
+        instructorId: primarySlot?.instructorId || chosenInst?.id || '',
+        instructorName: combinedInstructorName,
         monthlyFee: monthlyFeeVal,
         dueDay: parsedDueDay,
         paymentStatus: normalizedStatus,
@@ -590,9 +742,22 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                             <span className="font-semibold text-zinc-900 block truncate">
                               {student.enrollment.modalityName}
                             </span>
-                            <span className="text-[11px] text-zinc-500 block truncate">
-                              {student.enrollment.daysPerWeek}x ({student.enrollment.scheduleDays.join(', ')}) às {student.enrollment.scheduleTime}
-                            </span>
+                            {hasDistinctSlotTimesOrInstructors(student.enrollment) ? (
+                              <div className="flex flex-wrap gap-1 mt-0.5">
+                                {getEnrollmentSlots(student.enrollment).map((sl) => (
+                                  <span
+                                    key={sl.day}
+                                    className="inline-flex items-center px-1.5 py-0.2 rounded bg-zinc-100 text-zinc-700 font-mono text-[10px]"
+                                  >
+                                    {sl.day.slice(0, 3)} {sl.time}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-zinc-500 block truncate">
+                                {formatEnrollmentScheduleSummary(student.enrollment)}
+                              </span>
+                            )}
                             {student.enrollment.startDate && (
                               <span className="text-[10px] text-teal-700 font-mono block mt-0.5">
                                 Início na agenda: {student.enrollment.startDate.split('-').reverse().join('/')}
@@ -605,11 +770,15 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                               const defaultDays = ['Segunda', 'Quarta'];
                               const defaultInstId = instructors[0]?.id || '';
                               const info = getAvailableSlotsForEnrollment(operatingConfig, defaultInstId, defaultDays);
+                              const defaultTime = info.slots[0] || '08:00';
                               setMatriculaModalStudent(student);
                               setSelectedModalityId(modalities[0]?.id || '');
                               setInstructorId(defaultInstId);
                               setSelectedDays(defaultDays);
-                              setScheduleTime(info.slots[0] || '08:00');
+                              setScheduleTime(defaultTime);
+                              setScheduleSlots(
+                                defaultDays.map(day => buildSlotForDay(day, defaultInstId, defaultTime))
+                              );
                               setDueDayInput('10');
                               setStartDate(toLocalIsoDate(new Date()));
                             }}
@@ -624,7 +793,16 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                       {/* Instructor */}
                       <td className="px-4 py-3.5 text-zinc-800">
                         {student.enrollment ? (
-                          <span className="font-medium">{student.enrollment.instructorName}</span>
+                          <div>
+                            <span className="font-medium block">
+                              {formatEnrollmentInstructorsSummary(student.enrollment)}
+                            </span>
+                            {getEnrollmentInstructorShares(student.enrollment).length > 1 && (
+                              <span className="text-[10px] text-teal-700 font-semibold block">
+                                {canViewFinancialInfo ? 'Comissão dividida' : 'Professores alternados'}
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-zinc-400 italic">-</span>
                         )}
@@ -1036,11 +1214,11 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
 
                       <div>
                         <label className="text-zinc-700 font-semibold block mb-1">
-                          Professor / Instrutor Escolhido *
+                          Professor Padrão *
                         </label>
                         <select
                           value={instructorId}
-                          onChange={(e) => setInstructorId(e.target.value)}
+                          onChange={(e) => handleDefaultInstructorChange(e.target.value)}
                           className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 font-medium focus:outline-none focus:ring-1 focus:ring-teal-600"
                         >
                           {instructors.map((inst) => (
@@ -1090,7 +1268,7 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                       </div>
                       {scheduleInfo.disabledSelectedDays.length > 0 && (
                         <p className="text-[10px] text-amber-700 font-medium mt-1">
-                          Atenção: {scheduleInfo.disabledSelectedDays.join(', ')} está desabilitado(a) em 3. Agenda para este atendimento.
+                          Atenção: {scheduleInfo.disabledSelectedDays.join(', ')} está desabilitado(a) em 3. Agenda para o professor padrão.
                         </p>
                       )}
                     </div>
@@ -1114,11 +1292,11 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
 
                       <div>
                         <label className="text-zinc-700 font-semibold block mb-1">
-                          Horário da Aula *
+                          Horário Padrão *
                         </label>
                         <select
                           value={scheduleTime}
-                          onChange={(e) => setScheduleTime(e.target.value)}
+                          onChange={(e) => handleDefaultTimeChange(e.target.value)}
                           disabled={scheduleInfo.slots.length === 0 && !scheduleTime}
                           className="w-full bg-white border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono focus:outline-none focus:ring-1 focus:ring-teal-600"
                         >
@@ -1212,6 +1390,153 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                         </>
                       )}
                     </div>
+
+                    {/* Personalização por Dia: Horários e Professores distintos */}
+                    {scheduleSlots.length > 0 && (
+                      <div className="p-3 rounded-xl bg-white border border-teal-200/80 space-y-2.5">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1.5 border-b border-zinc-100">
+                          <div>
+                            <span className="text-[11px] font-bold text-zinc-900 flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-teal-700" />
+                              <span>Horário e Professor por Dia da Semana</span>
+                            </span>
+                            <span className="text-[10px] text-zinc-500 block">
+                              Ajuste cada dia individualmente se o aluno fizer aulas em horários ou com professores diferentes
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleApplyDefaultToAllDays}
+                            className="px-2.5 py-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold text-[10px] shrink-0 self-start sm:self-center transition-colors"
+                          >
+                            Aplicar padrão a todos
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {scheduleSlots.map((slot) => {
+                            const dayNum = DAY_NAME_TO_NUMBER[slot.day];
+                            const slotInstSchedule = getEffectiveScheduleForInstructor(
+                              operatingConfig,
+                              slot.instructorId
+                            );
+                            const dayCfg = slotInstSchedule.find(d => d.dayOfWeek === dayNum);
+                            const dayAvailableSlots =
+                              dayNum !== undefined ? getSlotsForDay(slotInstSchedule, dayNum) : [];
+                            const isClosedForSlotInst = dayCfg && !dayCfg.enabled;
+
+                            return (
+                              <div
+                                key={slot.day}
+                                className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center p-2 rounded-lg bg-zinc-50/80 border border-zinc-200/70"
+                              >
+                                <div className="sm:col-span-3 flex items-center justify-between sm:block">
+                                  <span className="inline-block px-2 py-0.5 rounded bg-teal-100 text-teal-900 font-bold text-[11px]">
+                                    {slot.day}
+                                  </span>
+                                  {isClosedForSlotInst ? (
+                                    <span className="text-[10px] text-amber-700 font-medium block mt-0.5">
+                                      Fechado para este prof.
+                                    </span>
+                                  ) : dayCfg ? (
+                                    <span className="text-[10px] text-zinc-400 font-mono block mt-0.5">
+                                      {dayCfg.startTime}–{dayCfg.endTime}
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                <div className="sm:col-span-3">
+                                  <label className="text-[10px] text-zinc-500 font-medium block mb-0.5">
+                                    Horário
+                                  </label>
+                                  <select
+                                    value={slot.time}
+                                    onChange={(e) => handleSlotTimeChange(slot.day, e.target.value)}
+                                    className="w-full bg-white border border-zinc-200 rounded-lg px-2 py-1.5 text-zinc-900 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-600"
+                                  >
+                                    {dayAvailableSlots.length === 0 ? (
+                                      <option value={slot.time || '08:00'}>
+                                        {slot.time || '08:00'}
+                                      </option>
+                                    ) : (
+                                      <>
+                                        {slot.time && !dayAvailableSlots.includes(slot.time) && (
+                                          <option value={slot.time}>{slot.time}</option>
+                                        )}
+                                        {dayAvailableSlots.map((t) => (
+                                          <option key={t} value={t}>{t}</option>
+                                        ))}
+                                      </>
+                                    )}
+                                  </select>
+                                </div>
+
+                                <div className="sm:col-span-6">
+                                  <label className="text-[10px] text-zinc-500 font-medium block mb-0.5">
+                                    Professor neste dia
+                                  </label>
+                                  <select
+                                    value={slot.instructorId}
+                                    onChange={(e) => handleSlotInstructorChange(slot.day, e.target.value)}
+                                    className="w-full bg-white border border-zinc-200 rounded-lg px-2 py-1.5 text-zinc-900 font-medium text-[11px] focus:outline-none focus:ring-1 focus:ring-teal-600"
+                                  >
+                                    {instructors.map((inst) => (
+                                      <option key={inst.id} value={inst.id}>
+                                        {inst.name}
+                                        {canViewFinancialInfo ? ` (${inst.commissionPercentage}%)` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {(() => {
+                          const shares = getEnrollmentInstructorShares({ scheduleSlots } as Enrollment);
+                          if (shares.length <= 1) return null;
+                          const chosenMod = modalities.find(m => m.id === selectedModalityId);
+                          const baseFee = chosenMod?.price || 380;
+                          return (
+                            <div className="p-2.5 rounded-lg bg-purple-50/80 border border-purple-200 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px] font-bold text-purple-950">
+                                <span>Rateio Automático entre Professores ({shares.length} vinculados)</span>
+                                {canViewFinancialInfo && (
+                                  <span className="font-mono text-purple-800">
+                                    Base: R$ {baseFee.toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="space-y-1">
+                                {shares.map((sh) => {
+                                  const instObj = instructors.find(i => i.id === sh.instructorId);
+                                  const commPct = instObj?.commissionPercentage ?? 40;
+                                  const propFee = Math.round(baseFee * sh.share * 100) / 100;
+                                  const propComm = Math.round(((propFee * commPct) / 100) * 100) / 100;
+                                  const daysDesc = sh.slots.map(s => `${s.day.slice(0, 3)} ${s.time}`).join(', ');
+                                  return (
+                                    <div
+                                      key={sh.instructorId || sh.instructorName}
+                                      className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-purple-900 bg-white/80 px-2 py-1 rounded border border-purple-200/70"
+                                    >
+                                      <span>
+                                        <strong>{sh.instructorName}</strong> · {daysDesc} ({sh.slotCount}/{sh.totalSlots} aulas)
+                                      </span>
+                                      {canViewFinancialInfo && (
+                                        <span className="font-mono font-bold text-purple-950">
+                                          {Math.round(sh.share * 100)}% (R$ {propFee.toFixed(2)}) × {commPct}% = R$ {propComm.toFixed(2)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1362,14 +1687,14 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
       {/* MODAL: Vincular Matrícula em Aluno Existente */}
       {matriculaModalStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-md w-full p-6 text-xs animate-in fade-in zoom-in-95 duration-150 my-auto">
+          <div className="bg-white rounded-2xl border border-zinc-200 shadow-2xl max-w-lg w-full p-6 text-xs animate-in fade-in zoom-in-95 duration-150 my-auto max-h-[92vh] overflow-y-auto">
             <h3 className="text-base font-bold text-zinc-900 mb-1">
               Vincular Matrícula para {matriculaModalStudent.name}
             </h3>
             <p className="text-zinc-500 mb-4">
               {canViewFinancialInfo
-                ? 'Selecione a modalidade, dias, horário de 3. Agenda e dia de vencimento'
-                : 'Selecione a modalidade, dias e horário de 3. Agenda'}
+                ? 'Selecione a modalidade, dias, horários, professores e dia de vencimento'
+                : 'Selecione a modalidade, dias, horários e professores'}
             </p>
 
             <div className="space-y-3">
@@ -1391,14 +1716,17 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
               </div>
 
               <div>
-                <label className="text-zinc-700 font-semibold block mb-1">Professor</label>
+                <label className="text-zinc-700 font-semibold block mb-1">Professor Padrão</label>
                 <select
                   value={instructorId}
-                  onChange={(e) => setInstructorId(e.target.value)}
+                  onChange={(e) => handleDefaultInstructorChange(e.target.value)}
                   className="w-full bg-zinc-50 border border-zinc-200 rounded-lg p-2 text-zinc-900"
                 >
                   {instructors.map(i => (
-                    <option key={i.id} value={i.id}>{i.name} ({i.councilNumber})</option>
+                    <option key={i.id} value={i.id}>
+                      {i.name} ({i.councilNumber})
+                      {canViewFinancialInfo ? ` - Com.: ${i.commissionPercentage}%` : ''}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -1449,10 +1777,10 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                   </span>
                 </div>
                 <div>
-                  <label className="text-zinc-700 font-semibold block mb-1">Horário (3. Agenda)</label>
+                  <label className="text-zinc-700 font-semibold block mb-1">Horário Padrão</label>
                   <select
                     value={scheduleTime}
-                    onChange={(e) => setScheduleTime(e.target.value)}
+                    onChange={(e) => handleDefaultTimeChange(e.target.value)}
                     disabled={scheduleInfo.slots.length === 0}
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-lg p-2 text-zinc-900 font-mono"
                   >
@@ -1489,6 +1817,97 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                 )}
               </div>
 
+              {scheduleSlots.length > 0 && (
+                <div className="p-3 rounded-xl bg-teal-50/40 border border-teal-200/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-zinc-900">
+                      Horário e Professor por Dia
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleApplyDefaultToAllDays}
+                      className="px-2 py-0.5 rounded bg-white border border-zinc-200 text-zinc-700 font-semibold text-[10px] hover:bg-zinc-100"
+                    >
+                      Aplicar padrão a todos
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    {scheduleSlots.map((slot) => {
+                      const dayNum = DAY_NAME_TO_NUMBER[slot.day];
+                      const slotInstSched = getEffectiveScheduleForInstructor(operatingConfig, slot.instructorId);
+                      const dayAvailableSlots =
+                        dayNum !== undefined ? getSlotsForDay(slotInstSched, dayNum) : [];
+                      return (
+                        <div key={slot.day} className="grid grid-cols-12 gap-2 items-center bg-white p-1.5 rounded-lg border border-zinc-200">
+                          <span className="col-span-3 font-bold text-teal-900 text-[11px]">
+                            {slot.day}
+                          </span>
+                          <select
+                            value={slot.time}
+                            onChange={(e) => handleSlotTimeChange(slot.day, e.target.value)}
+                            className="col-span-3 bg-zinc-50 border border-zinc-200 rounded px-1.5 py-1 font-mono text-[11px]"
+                          >
+                            {dayAvailableSlots.length === 0 ? (
+                              <option value={slot.time || '08:00'}>{slot.time || '08:00'}</option>
+                            ) : (
+                              <>
+                                {slot.time && !dayAvailableSlots.includes(slot.time) && (
+                                  <option value={slot.time}>{slot.time}</option>
+                                )}
+                                {dayAvailableSlots.map((t) => (
+                                  <option key={t} value={t}>{t}</option>
+                                ))}
+                              </>
+                            )}
+                          </select>
+                          <select
+                            value={slot.instructorId}
+                            onChange={(e) => handleSlotInstructorChange(slot.day, e.target.value)}
+                            className="col-span-6 bg-zinc-50 border border-zinc-200 rounded px-1.5 py-1 text-[11px] font-medium"
+                          >
+                            {instructors.map((inst) => (
+                              <option key={inst.id} value={inst.id}>
+                                {inst.name}
+                                {canViewFinancialInfo ? ` (${inst.commissionPercentage}%)` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {(() => {
+                    const shares = getEnrollmentInstructorShares({ scheduleSlots } as Enrollment);
+                    if (shares.length <= 1) return null;
+                    const chosenMod = modalities.find(m => m.id === selectedModalityId);
+                    const baseFee = chosenMod?.price || 380;
+                    return (
+                      <div className="p-2 rounded-lg bg-purple-50 border border-purple-200 text-[10px] text-purple-900 space-y-1">
+                        <strong className="block text-purple-950">
+                          Comissão dividida automaticamente entre {shares.length} professores:
+                        </strong>
+                        {shares.map((sh) => {
+                          const instObj = instructors.find(i => i.id === sh.instructorId);
+                          const commPct = instObj?.commissionPercentage ?? 40;
+                          const propFee = Math.round(baseFee * sh.share * 100) / 100;
+                          const propComm = Math.round(((propFee * commPct) / 100) * 100) / 100;
+                          return (
+                            <div key={sh.instructorId || sh.instructorName} className="flex justify-between">
+                              <span>{sh.instructorName} ({sh.slotCount}/{sh.totalSlots} aulas)</span>
+                              {canViewFinancialInfo && (
+                                <span className="font-mono font-bold">
+                                  {Math.round(sh.share * 100)}% → R$ {propComm.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               <div className="pt-3 border-t border-zinc-100 flex justify-end gap-2">
                 <button
                   onClick={() => setMatriculaModalStudent(null)}
@@ -1506,17 +1925,37 @@ export const AlunosView: React.FC<AlunosViewProps> = ({
                     const todayIso = toLocalIsoDate(new Date());
                     const dueDateIso = getCycleDueDateIso(parsedDueDay, effectiveStart);
 
+                    const normalizedSlots: EnrollmentScheduleSlot[] = (scheduleSlots.length > 0
+                      ? scheduleSlots
+                      : (selectedDays.length > 0 ? selectedDays : ['Segunda', 'Quarta']).map(day =>
+                          buildSlotForDay(day, chosenInst?.id || '', scheduleTime)
+                        )
+                    ).map(sl => {
+                      const matchedInst = instructors.find(i => i.id === sl.instructorId);
+                      return {
+                        day: sl.day,
+                        time: sl.time || scheduleTime || '08:00',
+                        instructorId: matchedInst?.id || sl.instructorId || chosenInst?.id || '',
+                        instructorName: matchedInst?.name || sl.instructorName || chosenInst?.name || 'A definir',
+                      };
+                    });
+                    const primarySlot = normalizedSlots[0];
+                    const combinedInstructorName = formatEnrollmentInstructorsSummary({
+                      scheduleSlots: normalizedSlots,
+                    } as Enrollment);
+
                     const updated: Student = {
                       ...matriculaModalStudent,
                       status: 'ativo',
                       enrollment: {
                         modalityId: chosenMod?.id || 'mod-1',
                         modalityName: chosenMod?.name || 'Pilates em Aparelhos',
-                        daysPerWeek: chosenMod?.daysPerWeek || selectedDays.length || 2,
-                        scheduleDays: selectedDays.length > 0 ? selectedDays : ['Segunda', 'Quarta'],
-                        scheduleTime,
-                        instructorId: chosenInst?.id || '',
-                        instructorName: chosenInst?.name || 'A definir',
+                        daysPerWeek: chosenMod?.daysPerWeek || normalizedSlots.length || 2,
+                        scheduleDays: normalizedSlots.map(s => s.day),
+                        scheduleTime: primarySlot?.time || scheduleTime,
+                        scheduleSlots: normalizedSlots,
+                        instructorId: primarySlot?.instructorId || chosenInst?.id || '',
+                        instructorName: combinedInstructorName,
                         monthlyFee: chosenMod?.price || 380,
                         dueDay: parsedDueDay,
                         paymentStatus: todayIso > dueDateIso ? 'atrasado' : 'pendente',

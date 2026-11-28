@@ -29,6 +29,13 @@ export interface Modality {
 
 export type PaymentMethod = 'Pix' | 'Dinheiro' | 'Débito' | 'Crédito';
 
+export interface EnrollmentScheduleSlot {
+  day: string;            // ex: 'Segunda', 'Quarta'
+  time: string;           // ex: '08:00', '10:00'
+  instructorId: string;   // ex: 'inst-1'
+  instructorName: string; // ex: 'Dra. Ana Paula Rodrigues'
+}
+
 export interface Enrollment {
   modalityId: string;
   modalityName: string;
@@ -37,6 +44,7 @@ export interface Enrollment {
   scheduleTime: string;   // ex: '09:00'
   instructorId: string;
   instructorName: string;
+  scheduleSlots?: EnrollmentScheduleSlot[]; // Grade detalhada por dia (horários e professores distintos)
   monthlyFee: number;
   dueDay: number; // 1 a 31
   paymentStatus: 'em_dia' | 'pendente' | 'atrasado';

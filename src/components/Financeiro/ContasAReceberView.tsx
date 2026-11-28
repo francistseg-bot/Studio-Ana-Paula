@@ -20,6 +20,11 @@ import {
 import { Student, Instructor, PaymentMethod } from '../../types/studio';
 import { toLocalIsoDate } from '../../utils/agendaProjection';
 import { getEffectiveBillingStatus } from '../../utils/billingStatus';
+import {
+  formatEnrollmentInstructorsSummary,
+  formatEnrollmentScheduleSummary,
+  getEnrollmentInstructorShares,
+} from '../../utils/enrollmentSchedule';
 
 const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: React.ReactNode }[] = [
   { value: 'Pix', label: 'Pix', icon: <QrCode className="w-3.5 h-3.5" /> },
@@ -388,14 +393,19 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                       {/* Modalidade */}
                       <td className="p-3.5 text-zinc-700">
                         <div className="font-medium">{enr.modalityName}</div>
-                        <span className="text-[10px] text-zinc-500">
-                          {enr.daysPerWeek}x na semana ({enr.scheduleDays.join(', ')})
+                        <span className="text-[10px] text-zinc-500 block">
+                          {formatEnrollmentScheduleSummary(enr)}
                         </span>
                       </td>
 
                       {/* Professor */}
                       <td className="p-3.5 text-zinc-700 font-medium">
-                        {enr.instructorName}
+                        <div>{formatEnrollmentInstructorsSummary(enr)}</div>
+                        {getEnrollmentInstructorShares(enr).length > 1 && (
+                          <span className="text-[10px] text-teal-700 font-semibold block">
+                            Comissão rateada
+                          </span>
+                        )}
                       </td>
 
                       {/* Dia do Vencimento */}
@@ -579,6 +589,13 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
         const fee = baixaModalStudent.enrollment?.monthlyFee || 0;
         const paidVal = parseFloat(effectivePaidAmount) || 0;
         const discountVal = parseFloat(discountAmountInput) || Math.max(0, fee - paidVal);
+        const instructorShares = getEnrollmentInstructorShares(baixaModalStudent.enrollment).map((sh) => {
+          const matchedInst = instructors.find(i => i.id === sh.instructorId);
+          const pct = matchedInst?.commissionPercentage ?? 30;
+          const baseFee = Math.round(fee * sh.share * 100) / 100;
+          const amount = Math.round(((baseFee * pct) / 100) * 100) / 100;
+          return { ...sh, pct, baseFee, amount };
+        });
         const assignedInst = instructors.find(i => i.id === baixaModalStudent.enrollment?.instructorId);
         const commPct = assignedInst?.commissionPercentage || 30;
         const commVal = (fee * commPct) / 100;
@@ -611,9 +628,11 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                     <span>Modalidade:</span>
                     <span className="font-medium text-zinc-800">{baixaModalStudent.enrollment?.modalityName}</span>
                   </div>
-                  <div className="flex justify-between text-zinc-500">
-                    <span>Professor Responsável:</span>
-                    <span className="font-medium text-zinc-800">{baixaModalStudent.enrollment?.instructorName}</span>
+                  <div className="flex justify-between text-zinc-500 gap-2">
+                    <span>Professor(es):</span>
+                    <span className="font-medium text-zinc-800 text-right">
+                      {formatEnrollmentInstructorsSummary(baixaModalStudent.enrollment)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-zinc-500">
                     <span>Valor Integral de Contrato:</span>
@@ -766,7 +785,25 @@ export const ContasAReceberView: React.FC<ContasAReceberViewProps> = ({
                     </div>
                   )}
                   <div className="pt-2 border-t border-teal-200/70 text-[11px] text-teal-900 leading-relaxed">
-                    <strong>Regra da Comissão:</strong> A remuneração do professor ({commPct}%) é apurada sobre o <strong>valor integral contratado de R$ {fee.toFixed(2)}</strong> (= <strong>R$ {commVal.toFixed(2)}</strong>), garantindo a integridade dos repasses.
+                    {instructorShares.length > 1 ? (
+                      <div className="space-y-1">
+                        <div>
+                          <strong>Regra da Comissão (Rateada):</strong> Apurada sobre o <strong>valor integral de R$ {fee.toFixed(2)}</strong> entre os professores vinculados:
+                        </div>
+                        {instructorShares.map((sh) => (
+                          <div key={sh.instructorId || sh.instructorName} className="flex justify-between text-[11px] font-medium">
+                            <span>
+                              • {sh.instructorName} ({sh.slotCount}/{sh.totalSlots} aulas · {sh.pct}% sobre R$ {sh.baseFee.toFixed(2)})
+                            </span>
+                            <strong className="font-mono">R$ {sh.amount.toFixed(2)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        <strong>Regra da Comissão:</strong> A remuneração do professor ({commPct}%) é apurada sobre o <strong>valor integral contratado de R$ {fee.toFixed(2)}</strong> (= <strong>R$ {commVal.toFixed(2)}</strong>), garantindo a integridade dos repasses.
+                      </>
+                    )}
                   </div>
                 </div>
 

@@ -35,6 +35,10 @@ import {
   resolveUserInstructor,
 } from '../utils/permissions';
 import { calculateInstructorCommission } from '../utils/commissionCalculator';
+import {
+  formatEnrollmentInstructorsSummary,
+  formatEnrollmentScheduleSummary,
+} from '../utils/enrollmentSchedule';
 
 interface DashboardOverviewProps {
   students: Student[];
@@ -454,7 +458,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
                     {student.enrollment && (
                       <div className="text-[11px] text-zinc-700 font-medium">
-                        <strong>Modalidade:</strong> {student.enrollment.modalityName} ({student.enrollment.daysPerWeek}x/sem) · Prof. {student.enrollment.instructorName}
+                        <strong>Modalidade:</strong> {student.enrollment.modalityName} ({formatEnrollmentScheduleSummary(student.enrollment)}) · Prof. {formatEnrollmentInstructorsSummary(student.enrollment)}
                       </div>
                     )}
                   </div>

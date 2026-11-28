@@ -2,6 +2,10 @@ import React, { useRef, useState } from 'react';
 import { X, Printer, Copy, Check, FileCheck, Building2, PenTool, Trash2, Save } from 'lucide-react';
 import { Student, CompanyData } from '../../types/studio';
 import SignatureCanvas from 'react-signature-canvas';
+import {
+  formatEnrollmentInstructorsSummary,
+  formatEnrollmentTimesForContract,
+} from '../../utils/enrollmentSchedule';
 
 interface ContratoModalProps {
   student: Student;
@@ -42,8 +46,8 @@ export function generateContractText(student: Student, company: CompanyData): st
   text = text.replace(/{{MODALIDADE_NOME}}/g, enrollment?.modalityName || 'Pilates em Aparelhos');
   text = text.replace(/{{DIAS_SEMANA}}/g, String(enrollment?.daysPerWeek || 2));
   text = text.replace(/{{DIAS_ESCOLHIDOS}}/g, enrollment?.scheduleDays.join(', ') || 'A combinar');
-  text = text.replace(/{{HORARIO_AULA}}/g, enrollment?.scheduleTime || 'A combinar');
-  text = text.replace(/{{PROFESSOR_RESPONSAVEL}}/g, enrollment?.instructorName || 'Dra. Ana Paula Rodrigues');
+  text = text.replace(/{{HORARIO_AULA}}/g, enrollment ? formatEnrollmentTimesForContract(enrollment) : 'A combinar');
+  text = text.replace(/{{PROFESSOR_RESPONSAVEL}}/g, enrollment ? formatEnrollmentInstructorsSummary(enrollment) : 'Dra. Ana Paula Rodrigues');
   text = text.replace(/{{VALOR_MENSALIDADE}}/g, enrollment?.monthlyFee ? enrollment.monthlyFee.toFixed(2) : '380,00');
   text = text.replace(/{{VALOR_EXTENSO}}/g, enrollment?.monthlyFee ? `${enrollment.monthlyFee.toFixed(2)} reais` : 'trezentos e oitenta reais');
   text = text.replace(/{{DIA_VENCIMENTO}}/g, String(enrollment?.dueDay || 10));

@@ -18,6 +18,7 @@ import {
 import { Instructor, Student, AgendaClassSession, Modality, MonthlyCommissionClosing, CommissionOverridesMap } from '../../types/studio';
 import { FecharComissaoModal } from '../Financeiro/FecharComissaoModal';
 import { calculateInstructorCommission } from '../../utils/commissionCalculator';
+import { getInstructorShareForEnrollment } from '../../utils/enrollmentSchedule';
 
 interface ProfessoresViewProps {
   instructors: Instructor[];
@@ -177,7 +178,7 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
           const currentYear = now.getFullYear();
 
           const assignedStudents = students.filter(
-            s => s.status === 'ativo' && s.enrollment && s.enrollment.instructorId === inst.id
+            s => s.status === 'ativo' && s.enrollment && getInstructorShareForEnrollment(s.enrollment, inst).share > 0
           );
 
           const commissionData = calculateInstructorCommission({
@@ -344,15 +345,25 @@ export const ProfessoresView: React.FC<ProfessoresViewProps> = ({
                       </span>
                     ) : (
                       assignedStudents.map(s => {
+                        const shareInfo = getInstructorShareForEnrollment(s.enrollment, inst);
+                        const isShared = shareInfo.share > 0 && shareInfo.share < 0.999;
+                        const slotsTag = shareInfo.slots.map(sl => `${sl.day.slice(0, 3)} ${sl.time}`).join(', ');
                         const rowOverride = commissionData.rows.find(
                           r => r.type === 'mensalidade' && r.studentId === s.id
                         );
                         const commVal = rowOverride
                           ? rowOverride.commissionAmount
-                          : ((s.enrollment?.monthlyFee || 0) * inst.commissionPercentage) / 100;
+                          : ((s.enrollment?.monthlyFee || 0) * shareInfo.share * inst.commissionPercentage) / 100;
                         return (
                           <div key={s.id} className="text-[11px] text-zinc-700 flex justify-between items-center gap-2 bg-zinc-50 p-1.5 rounded">
-                            <span className="font-medium truncate">{s.name}</span>
+                            <div className="min-w-0">
+                              <span className="font-medium truncate block">{s.name}</span>
+                              {isShared && (
+                                <span className="text-[10px] text-teal-700 font-medium block truncate">
+                                  Rateio {shareInfo.slotCount}/{shareInfo.totalSlots} aulas{slotsTag ? ` · ${slotsTag}` : ''}
+                                </span>
+                              )}
+                            </div>
                             {canViewRevenue ? (
                               <span className="font-mono text-teal-800 font-bold shrink-0">
                                 R$ {commVal.toFixed(2)} comissão

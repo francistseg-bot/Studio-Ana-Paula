@@ -1,4 +1,5 @@
 import { Instructor, MainNavigation, Student, UserAccount } from '../types/studio';
+import { getInstructorShareForEnrollment } from './enrollmentSchedule';
 
 export interface PermissionDefinition {
   id: string;
@@ -172,16 +173,7 @@ export function studentBelongsToInstructor(
   instructor: Instructor | null | undefined
 ): boolean {
   if (!instructor || !student.enrollment) return false;
-  if (student.enrollment.instructorId && student.enrollment.instructorId === instructor.id) {
-    return true;
-  }
-  if (
-    !student.enrollment.instructorId &&
-    normalizePersonName(student.enrollment.instructorName) === normalizePersonName(instructor.name)
-  ) {
-    return true;
-  }
-  return false;
+  return getInstructorShareForEnrollment(student.enrollment, instructor).share > 0;
 }
 
 export function filterStudentsForUser(

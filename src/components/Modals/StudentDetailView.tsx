@@ -19,6 +19,12 @@ import {
 } from 'lucide-react';
 import { Student } from '../../types/studio';
 import { getEffectiveBillingStatus } from '../../utils/billingStatus';
+import {
+  formatEnrollmentInstructorsSummary,
+  getEnrollmentInstructorShares,
+  getEnrollmentSlots,
+  hasDistinctSlotTimesOrInstructors,
+} from '../../utils/enrollmentSchedule';
 
 interface StudentDetailViewProps {
   student: Student;
@@ -265,11 +271,41 @@ export const StudentDetailView: React.FC<StudentDetailViewProps> = ({
               </div>
               <div>
                 <span className="text-zinc-500 block">Horário da Aula:</span>
-                <strong className="font-mono">{student.enrollment.scheduleTime}</strong>
+                {hasDistinctSlotTimesOrInstructors(student.enrollment) ? (
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {getEnrollmentSlots(student.enrollment).map((sl) => (
+                      <span
+                        key={sl.day}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-teal-200/80 text-[10px] font-mono text-zinc-800"
+                      >
+                        <strong>{sl.day.slice(0, 3)}</strong> {sl.time}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <strong className="font-mono">{student.enrollment.scheduleTime}</strong>
+                )}
               </div>
               <div>
                 <span className="text-zinc-500 block">Professor Responsável:</span>
-                <strong>{student.enrollment.instructorName}</strong>
+                <strong>{formatEnrollmentInstructorsSummary(student.enrollment)}</strong>
+                {(() => {
+                  const shares = getEnrollmentInstructorShares(student.enrollment);
+                  if (shares.length <= 1) return null;
+                  return (
+                    <div className="mt-1 space-y-0.5">
+                      {shares.map((sh) => (
+                        <span
+                          key={sh.instructorId || sh.instructorName}
+                          className="block text-[10px] text-teal-800 font-medium"
+                        >
+                          {sh.instructorName}: {sh.slots.map((sl) => `${sl.day.slice(0, 3)} ${sl.time}`).join(', ')}
+                          {canViewFinancialInfo ? ` (${Math.round(sh.share * 100)}% da matrícula)` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
               {canViewFinancialInfo ? (
                 <div>

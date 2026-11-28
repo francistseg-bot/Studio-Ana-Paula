@@ -6,6 +6,11 @@ import {
   StudioOperatingConfig,
 } from '../types/studio';
 import { DAY_NAME_TO_NUMBER } from './scheduleSlots';
+import {
+  getEnrollmentSlots,
+  getInstructorShareForEnrollment,
+  instructorMatchesSlot,
+} from './enrollmentSchedule';
 
 export function toLocalIsoDate(date: Date): string {
   const y = date.getFullYear();
@@ -52,15 +57,7 @@ export function enrollmentMatchesDayOfWeek(scheduleDays: string[] | undefined, d
 }
 
 export function studentMatchesInstructor(student: Student, instructor: Instructor): boolean {
-  if (!student.enrollment) return false;
-  if (student.enrollment.instructorId === instructor.id) return true;
-  if (
-    !student.enrollment.instructorId &&
-    normalizeText(student.enrollment.instructorName) === normalizeText(instructor.name)
-  ) {
-    return true;
-  }
-  return false;
+  return getInstructorShareForEnrollment(student.enrollment, instructor).share > 0;
 }
 
 function isDateOnOrAfterStartDate(dateIso: string, startDate?: string): boolean {
@@ -108,16 +105,18 @@ export function getProjectedSessionFor(params: {
   // Projeta alunos ativos cuja matrícula inclui este dia da semana, horário, professor e Data de Início
   students.forEach(st => {
     if (st.status !== 'ativo' || !st.enrollment) return;
-    if (st.enrollment.scheduleTime !== time) return;
-    if (!studentMatchesInstructor(st, instructor)) return;
-    if (!enrollmentMatchesDayOfWeek(st.enrollment.scheduleDays, dayOfWeek)) return;
     if (!isDateOnOrAfterStartDate(date, st.enrollment.startDate)) return;
     if (removedSet.has(st.id)) return;
     if (presentIds.has(st.id)) return;
 
-    const matchedDayLabel = st.enrollment.scheduleDays.find(
-      d => DAY_ALIAS_TO_NUMBER[normalizeText(d)] === dayOfWeek
+    const slots = getEnrollmentSlots(st.enrollment);
+    const matchedSlot = slots.find(
+      sl =>
+        sl.time === time &&
+        instructorMatchesSlot(sl, instructor) &&
+        DAY_ALIAS_TO_NUMBER[normalizeText(sl.day)] === dayOfWeek
     );
+    if (!matchedSlot) return;
 
     baseStudents.push({
       id: `slot-${st.id}-${date}-${time.replace(':', '')}`,
@@ -126,7 +125,7 @@ export function getProjectedSessionFor(params: {
       studentPhone: st.phone,
       studentPhoto: st.photoUrl,
       attendanceStatus: 'agendado',
-      notes: `Matrícula: ${st.enrollment.modalityName} (${matchedDayLabel || ''} ${time})`,
+      notes: `Matrícula: ${st.enrollment.modalityName} (${matchedSlot.day} ${time})`,
     });
     presentIds.add(st.id);
   });
@@ -176,12 +175,18 @@ export function getProjectedSessionsForDate(params: {
       if (
         st.status === 'ativo' &&
         st.enrollment &&
-        st.enrollment.scheduleTime &&
-        studentMatchesInstructor(st, inst) &&
-        enrollmentMatchesDayOfWeek(st.enrollment.scheduleDays, dayOfWeek) &&
         isDateOnOrAfterStartDate(date, st.enrollment.startDate)
       ) {
-        timesSet.add(st.enrollment.scheduleTime);
+        const slots = getEnrollmentSlots(st.enrollment);
+        slots.forEach(sl => {
+          if (
+            sl.time &&
+            instructorMatchesSlot(sl, inst) &&
+            DAY_ALIAS_TO_NUMBER[normalizeText(sl.day)] === dayOfWeek
+          ) {
+            timesSet.add(sl.time);
+          }
+        });
       }
     });
 

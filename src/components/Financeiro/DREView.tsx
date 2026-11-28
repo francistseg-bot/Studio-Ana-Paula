@@ -33,6 +33,7 @@ import { FecharComissaoModal } from './FecharComissaoModal';
 import { EditarComissaoAlunosModal } from './EditarComissaoAlunosModal';
 import { calculateInstructorCommission } from '../../utils/commissionCalculator';
 import { getEffectiveBillingStatus } from '../../utils/billingStatus';
+import { formatEnrollmentInstructorsSummary } from '../../utils/enrollmentSchedule';
 
 interface DREViewProps {
   students: Student[];
@@ -681,7 +682,7 @@ export const DREView: React.FC<DREViewProps> = ({
                         <tr key={st.id} className="hover:bg-zinc-50/50">
                           <td className="p-2.5 font-bold text-zinc-900">{st.name}</td>
                           <td className="p-2.5 text-zinc-600">{st.enrollment?.modalityName}</td>
-                          <td className="p-2.5 font-medium">{st.enrollment?.instructorName}</td>
+                          <td className="p-2.5 font-medium">{formatEnrollmentInstructorsSummary(st.enrollment)}</td>
                           <td className="p-2.5 font-mono text-zinc-700">R$ {fee.toFixed(2)}</td>
                           <td className="p-2.5 font-mono">
                             {discount > 0 ? (
@@ -737,7 +738,7 @@ export const DREView: React.FC<DREViewProps> = ({
                       <tr key={st.id} className="hover:bg-zinc-50/50">
                         <td className="p-2.5 font-bold text-zinc-900">{st.name}</td>
                         <td className="p-2.5 text-zinc-600">{st.enrollment?.modalityName}</td>
-                        <td className="p-2.5">{st.enrollment?.instructorName}</td>
+                        <td className="p-2.5">{formatEnrollmentInstructorsSummary(st.enrollment)}</td>
                         <td className="p-2.5 font-mono">Dia {st.enrollment?.dueDay}</td>
                         <td className="p-2.5">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${

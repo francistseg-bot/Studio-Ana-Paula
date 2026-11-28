@@ -40,6 +40,7 @@ import {
   getSlotsForDay,
   getAllEnabledSlotsForWeek
 } from '../../utils/scheduleSlots';
+import { getEnrollmentSlots } from '../../utils/enrollmentSchedule';
 import {
   getProjectedSessionFor,
   getProjectedSessionsForDate,
@@ -200,8 +201,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
       .filter(s => weekDateSet.has(s.date) && s.students.length > 0 && (effectiveInstructorFilter === 'all' || s.instructorId === effectiveInstructorFilter))
       .map(s => s.time);
     const enrolledTimes = scopedStudents
-      .filter(st => st.status === 'ativo' && st.enrollment?.scheduleTime && (effectiveInstructorFilter === 'all' || st.enrollment.instructorId === effectiveInstructorFilter))
-      .map(st => st.enrollment!.scheduleTime);
+      .filter(st => st.status === 'ativo' && st.enrollment)
+      .flatMap(st =>
+        getEnrollmentSlots(st.enrollment)
+          .filter(sl => effectiveInstructorFilter === 'all' || sl.instructorId === effectiveInstructorFilter)
+          .map(sl => sl.time)
+      );
     return Array.from(new Set([...configured, ...sessionTimes, ...enrolledTimes])).sort();
   })();
 

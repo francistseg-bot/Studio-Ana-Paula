@@ -7,6 +7,7 @@ import {
   MonthlyCommissionClosing,
   Student,
 } from '../types/studio';
+import { getInstructorShareForEnrollment } from './enrollmentSchedule';
 
 export interface CalculatedCommissionRow {
   itemKey: string;
@@ -86,13 +87,20 @@ export function calculateInstructorCommission(params: {
     c => c.instructorId === instructor.id && c.month === month && c.year === year
   );
 
-  const assignedStudents = students.filter(
-    s => s.status === 'ativo' && s.enrollment && s.enrollment.instructorId === instructor.id
-  );
-  const revenueGenerated = assignedStudents.reduce(
-    (acc, s) => acc + (s.enrollment?.monthlyFee || 0),
-    0
-  );
+  const assignedEntries = students
+    .filter(s => s.status === 'ativo' && s.enrollment)
+    .map(s => ({
+      student: s,
+      shareInfo: getInstructorShareForEnrollment(s.enrollment, instructor),
+    }))
+    .filter(entry => entry.shareInfo.share > 0);
+
+  const revenueGenerated = Math.round(
+    assignedEntries.reduce(
+      (acc, entry) => acc + (entry.student.enrollment?.monthlyFee || 0) * entry.shareInfo.share,
+      0
+    ) * 100
+  ) / 100;
 
   if (existingClosing) {
     const rows: CalculatedCommissionRow[] = existingClosing.attendedStudents.map((item, idx) => ({
@@ -139,10 +147,11 @@ export function calculateInstructorCommission(params: {
   let defaultTotal = 0;
   let hasManualOverrides = false;
 
-  // 1. Matrículas Ativas Vinculadas a este Professor
-  assignedStudents.forEach(st => {
+  // 1. Matrículas Ativas Vinculadas a este Professor (integral ou rateado entre professores)
+  assignedEntries.forEach(({ student: st, shareInfo }) => {
     const fee = st.enrollment?.monthlyFee || 0;
-    const defaultAmount = Math.round(((fee * commPct) / 100) * 100) / 100;
+    const proportionalFee = Math.round(fee * shareInfo.share * 100) / 100;
+    const defaultAmount = Math.round(((proportionalFee * commPct) / 100) * 100) / 100;
     const itemKey = `mensalidade__${st.id}`;
     const override = overridesForInstructor[itemKey];
     const hasCustom = override && typeof override.customAmount === 'number';
@@ -156,7 +165,11 @@ export function calculateInstructorCommission(params: {
     defaultTotal += defaultAmount;
     sumMonthly += finalAmount;
 
-    const baseDetails = `Comissão Contratual (${commPct}%)`;
+    const isShared = shareInfo.share < 0.999;
+    const slotsDesc = shareInfo.slots.map(sl => `${sl.day.slice(0, 3)} ${sl.time}`).join(', ');
+    const baseDetails = isShared
+      ? `Rateio ${shareInfo.slotCount}/${shareInfo.totalSlots} aulas${slotsDesc ? ` (${slotsDesc})` : ''} · Comissão ${commPct}%`
+      : `Comissão Contratual (${commPct}%)`;
     const details = isOverridden
       ? `${override?.notes?.trim() ? override.notes.trim() : baseDetails} · Ajuste manual`
       : baseDetails;
@@ -167,7 +180,7 @@ export function calculateInstructorCommission(params: {
       studentName: st.name,
       type: 'mensalidade',
       modalityName: st.enrollment?.modalityName || 'Pilates Regular',
-      monthlyFeeReference: fee,
+      monthlyFeeReference: proportionalFee,
       defaultAmount,
       commissionAmount: finalAmount,
       isOverridden,
@@ -323,7 +336,7 @@ export function calculateInstructorCommission(params: {
     s =>
       s.status === 'ativo' &&
       agendaStudentIds.has(s.id) &&
-      s.enrollment?.instructorId !== instructor.id &&
+      getInstructorShareForEnrollment(s.enrollment, instructor).share === 0 &&
       !includedStudentIds.has(s.id)
   );
 
